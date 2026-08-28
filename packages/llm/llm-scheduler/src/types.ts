@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-llm-scheduler/types
  */
 
+import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { LaneId, ReservationId } from './brand.ts'
 
 /** Stable provider route key (`deepseek-official`, `openai`, `acme-gateway`, …). */
@@ -62,12 +63,30 @@ export const enum LaneStatus {
   BLOCKED_CONFIG = 'blocked_config',
 }
 
-/** Decision the plane applies to a single failed reservation. */
+/**
+ * Decision the plane applies to a single failed reservation.
+ *
+ * The `retarget` variant is produced only by `llm/scheduler-decide` listeners;
+ * the stream gate executes it (release the source slot, optionally open the
+ * source circuit, re-dispatch on the target lane) instead of the plane.
+ */
 export type FailureDecision =
   | { readonly kind: 'fail_call'; readonly category: FailureCategory }
   | { readonly kind: 'open_circuit'; readonly category: FailureCategory; readonly cooldownMs: number }
   | { readonly kind: 'block_until_time'; readonly category: FailureCategory; readonly untilMs: number }
   | { readonly kind: 'block_config'; readonly category: FailureCategory }
+  | {
+    /** Release the source slot and re-dispatch this call on another lane. */
+    readonly kind: 'retarget'
+    readonly category: FailureCategory
+    /** Target provider route for the re-dispatch. */
+    readonly to: LaneKey
+    /**
+     * Optional circuit window to open on the SOURCE lane while the call moves
+     * on; omit to leave source-lane health untouched.
+     */
+    readonly openCircuitMs?: number
+  }
 
 /** Active reservation held by one caller. */
 export interface Reservation {
@@ -117,6 +136,32 @@ export interface RedactedFailure {
   readonly message: string
 }
 
+/**
+ * Facts handed to `llm/scheduler-route` listeners before every admission.
+ * Routing-relevant call metadata only — never message content.
+ */
+export interface RouteFacts {
+  /** Provider route the call currently targets (before any override). */
+  readonly provider: LaneKey
+  /** Model the call requests. */
+  readonly model: string
+  /** Declared call purpose, when the caller set one. */
+  readonly purpose: GenerateOptions['purpose']
+  /** Wall-clock millisecond timestamp at consultation time. */
+  readonly now: number
+}
+
+/**
+ * Facts handed to `llm/scheduler-decide` listeners after every error finish.
+ * The failure rides in already redacted: no secrets, no raw URLs.
+ */
+export interface DecideFacts {
+  /** Redacted failure facts for the attempt that just errored. */
+  readonly failure: RedactedFailure
+  /** Wall-clock millisecond timestamp at decision time. */
+  readonly now: number
+}
+
 /** Snapshot consumed by `ctx.llmScheduler.status()` and forwarded to the UI. */
 export interface SchedulerStatus {
   /** Per-lane availability snapshot. */
@@ -149,6 +194,43 @@ declare module '@deepseek-ai/cordis' {
      * @param status - the latest snapshot, replaced atomically with each emission.
      */
     'llm/scheduler-updated'(status: SchedulerStatus): void
+    /**
+     * Consulted before every admission: override the provider route this call
+     * dispatches on (time-of-day routing, maintenance windows, canary splits).
+     *
+     * Dispatch is `bail`: listeners run in registration order (prepend to run
+     * first) and the first listener returning a lane key wins; return
+     * `undefined` or `false` to abstain. The winning key rewrites
+     * `options.provider` in place before the adapter dispatches, so the
+     * reservation and the physical call stay on one lane. Listeners must be
+     * synchronous and side-effect free; a listener that throws voids the whole
+     * consultation and the call keeps its own provider.
+     *
+     * @mode bail
+     * @param facts - routing-relevant call facts; no message content.
+     * @returns the lane key to dispatch on, or `undefined` to abstain.
+     */
+    'llm/scheduler-route'(facts: RouteFacts): LaneKey | undefined
+    /**
+     * Consulted after every error finish before the built-in disposition:
+     * override how the failure is adjudicated (custom circuit windows,
+     * degradation with failover, per-provider overrides of the default table).
+     *
+     * Dispatch is `bail`: listeners run in registration order (prepend to run
+     * first) and the first listener returning a {@link FailureDecision} wins;
+     * return `undefined` or `false` to abstain. A `retarget` decision is
+     * executed by the gate itself: it releases the source slot, optionally
+     * opens the source circuit, and re-dispatches the call on the target lane
+     * (bounded by a per-call hop budget). Listeners must be synchronous and
+     * side-effect free; a listener that throws voids the whole consultation
+     * and the built-in disposition table (see `classifyFailure`/`decideFailure`
+     * in `./failure.ts`) applies.
+     *
+     * @mode bail
+     * @param facts - redacted failure facts; no secrets, no raw URLs.
+     * @returns the disposition to apply, or `undefined` to abstain.
+     */
+    'llm/scheduler-decide'(facts: DecideFacts): FailureDecision | undefined
   }
 }
 

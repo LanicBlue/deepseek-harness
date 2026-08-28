@@ -28,17 +28,39 @@
 
 未配置的 lane 不限并发——默认组合在配置 lane 之前不改变任何行为。
 
+## 策略扩展事件
+
+调度器把两个决策点开放为 Cordis `bail` 事件：策略插件（含 agent 运行时定义的动态包）监听事件即可改写路由与裁决，不必 fork 本包：
+
+- `llm/scheduler-route`——每次准入前咨询。监听器返回目标 lane key 即把本次调用改道（分时路由、维护窗口、金丝雀分流）；返回 `undefined` 或 `false` 弃权。胜出的 key 就地改写 `options.provider`，预约与物理派发保持同一 lane。
+- `llm/scheduler-decide`——每个 error finish 之后、内置裁决表之前咨询。监听器返回 `FailureDecision` 即生效；`{ kind: 'retarget', to, openCircuitMs? }` 由 gate 统一执行：释放源槽位、按提示熔断源 lane、在目标 lane 重新准入（每次调用最多 2 跳，防策略回环）。
+
+两个事件按监听器注册顺序分发（`ctx.on(name, listener, true)` 可插队优先）；监听器必须同步且无副作用，抛异常的监听器作废整次咨询并回退内置行为。事件 facts 只含路由/裁决相关字段，失败事实已脱敏。
+
+```ts
+// A time-of-day routing policy plugin (host half; the same code mounts
+// unchanged as a dynamic package or a patch row).
+import type { Context } from '@deepseek-ai/cordis'
+
+export function apply(ctx: Context): void {
+  ctx.on('llm/scheduler-route', facts =>
+    isOfficePeak(facts.now) && facts.provider === 'deepseek-official'
+      ? 'deepseek-backup'
+      : undefined)
+}
+```
+
 ## 模型体验
 
-无：调度器只是 gate 和转发；既不组装也不发送 provider 请求。它不在任何模型请求的数据路径上，也不在任何模型的输出里。
+无。调度器只做准入与转发——既不组装也不发送 provider 请求，不在任何模型请求的数据路径上，也不出现在任何模型的输出里。
 
 #### KV Cache 影响
 
-无：调度器既不组装也不发送 provider 请求。
+无。调度器既不组装也不发送 provider 请求。
 
 ## 已知限制与暂缓事项
 
 - **跨 provider failover** 不在范围：降级 lane 把调用者挂停；路由切换属于未来 `agent/request` 策略下的配置回退链。
 - **按 owner 的优先级语义。** 原版从持久化 owner 类型派生 `P0`-`P4`；本 harness 只暴露 `purpose`（`compaction`、`session-title`，其余即 conversation），因此映射是 purpose 到类别，可配置但更粗：一个 session 的后台子代理调用与交互轮次共享 `P1`。
 - **持久化重试预算留在 plane。** 重试计数完全放在 `dsh-llm-retry` 的 session 事件里；plane 的瞬态预算只以探测失败回退的形式存在。
-- **Retarget API。** Plane 保留一个尚无调用的 API面，用于未来的回退链。
+- **配置化回退链**暂不做：`retarget` 已可执行监听器指定的失败改道（见 `llm/scheduler-decide`），但持久化的按路由回退链属于未来 `agent/request` 策略。

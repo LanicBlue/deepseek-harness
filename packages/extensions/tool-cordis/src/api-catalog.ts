@@ -1187,6 +1187,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'llmScheduler',
+    summary: 'Default-exported Service plugin: `ctx.llmScheduler.status()` is the public surface for queries; the `llm/scheduler-updated` event is the public surface for transitions.',
+    description: 'Default-exported Service plugin: `ctx.llmScheduler.status()` is the public surface for queries; the `llm/scheduler-updated` event is the public surface for transitions.',
+    methods: [
+      {
+        signature: 'registerLane(key: LaneKey, config: LaneConfig): void',
+        description: 'Configure one lane at runtime.',
+        parameters: [{ name: 'key', description: 'provider route the lane admission policy applies to.' }, { name: 'config', description: 'enabled flag and concurrency bound for the lane.' }],
+      },
+      {
+        signature: '@Remote(\'status\') status(): SchedulerStatus',
+        description: 'Snapshot the scheduler\'s state.',
+        parameters: [],
+        returns: 'the current per-lane availability, recent failures, and totals.',
+      },
+      {
+        signature: 'onStatusChange(listener: (status: SchedulerStatus) => void): () => void',
+        description: 'Subscribe to status changes.',
+        parameters: [{ name: 'listener', description: 'called with each debounced {@link SchedulerStatus} snapshot.' }],
+        returns: 'a disposer removing the listener.',
+      },
+    ],
+  },
+  {
     key: 'lsp',
     summary: 'The LSP capability seam (`ctx.lsp`).',
     description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
@@ -3121,6 +3145,30 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'llm/scheduler-decide',
+    mode: 'bail',
+    signature: '\'llm/scheduler-decide\'(facts: DecideFacts): FailureDecision | undefined',
+    summary: 'Consulted after every error finish before the built-in disposition: override how the failure is adjudicated (custom circuit windows, degradation with failover, per-provider overrides of the default table).',
+    description: 'Consulted after every error finish before the built-in disposition: override how the failure is adjudicated (custom circuit windows, degradation with failover, per-provider overrides of the default table).\n\nDispatch is `bail`: listeners run in registration order (prepend to run first) and the first listener returning a FailureDecision wins; return `undefined` or `false` to abstain. A `retarget` decision is executed by the gate itself: it releases the source slot, optionally opens the source circuit, and re-dispatches the call on the target lane (bounded by a per-call hop budget). Listeners must be synchronous and side-effect free; a listener that throws voids the whole consultation and the built-in disposition table (see `classifyFailure`/`decideFailure` in `./failure.ts`) applies.',
+    parameters: [{ name: 'facts', description: 'redacted failure facts; no secrets, no raw URLs.' }],
+  },
+  {
+    name: 'llm/scheduler-route',
+    mode: 'bail',
+    signature: '\'llm/scheduler-route\'(facts: RouteFacts): LaneKey | undefined',
+    summary: 'Consulted before every admission: override the provider route this call dispatches on (time-of-day routing, maintenance windows, canary splits).',
+    description: 'Consulted before every admission: override the provider route this call dispatches on (time-of-day routing, maintenance windows, canary splits).\n\nDispatch is `bail`: listeners run in registration order (prepend to run first) and the first listener returning a lane key wins; return `undefined` or `false` to abstain. The winning key rewrites `options.provider` in place before the adapter dispatches, so the reservation and the physical call stay on one lane. Listeners must be synchronous and side-effect free; a listener that throws voids the whole consultation and the call keeps its own provider.',
+    parameters: [{ name: 'facts', description: 'routing-relevant call facts; no message content.' }],
+  },
+  {
+    name: 'llm/scheduler-updated',
+    mode: 'emit',
+    signature: '\'llm/scheduler-updated\'(status: SchedulerStatus): void',
+    summary: 'Forwarded snapshot of SchedulerStatus after every status change.',
+    description: 'Forwarded snapshot of SchedulerStatus after every status change.',
+    parameters: [{ name: 'status', description: 'the latest snapshot, replaced atomically with each emission.' }],
+  },
+  {
     name: 'llm/stream',
     mode: 'waterfall',
     signature: '\'llm/stream\'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
@@ -3821,6 +3869,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'DecideFacts',
+    declaration: 'export interface DecideFacts {\n    readonly failure: RedactedFailure;\n    readonly now: number;\n}',
+  },
+  {
     name: 'DeepSeekLlmApiExtensionMap',
     declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
   },
@@ -3953,6 +4005,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
   {
+    name: 'FailureDecision',
+    declaration: 'export type FailureDecision = {\n    readonly kind: \'fail_call\';\n    readonly category: FailureCategory;\n} | {\n    readonly kind: \'open_circuit\';\n    readonly category: FailureCategory;\n    readonly cooldownMs: number;\n} | {\n    readonly kind: \'block_until_time\';\n    readonly category: FailureCategory;\n    readonly untilMs: number;\n} | {\n    readonly kind: \'block_config\';\n    readonly category: FailureCategory;\n} | {\n    readonly kind: \'retarget\';\n    readonly category: FailureCategory;\n    readonly to: LaneKey;\n    readonly openCircuitMs?: number;\n};',
     name: 'FiberState',
     declaration: 'export type FiberState = FiberStateEnum;',
   },
@@ -4223,6 +4277,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'LaneConfig',
+    declaration: 'export interface LaneConfig {\n    enabled: boolean;\n    maxConcurrency?: number;\n}',
+  },
+  {
+    name: 'LaneId',
+    declaration: 'export type LaneId = Branded<\'LlmSchedulerLaneId\'>;',
+  },
+  {
+    name: 'LaneKey',
+    declaration: 'export type LaneKey = string;',
+  },
+  {
+    name: 'LaneView',
+    declaration: 'export interface LaneView {\n    readonly id: LaneId;\n    readonly key: LaneKey;\n    readonly enabled: boolean;\n    readonly status: LaneStatus;\n    readonly maxConcurrency?: number;\n    readonly inFlight: number;\n    readonly queued: number;\n    readonly cooldownUntilMs?: number;\n    readonly lastCategory?: FailureCategory;\n}',
   },
   {
     name: 'LlmAdapter',
@@ -4597,6 +4667,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
   },
   {
+    name: 'RedactedFailure',
+    declaration: 'export interface RedactedFailure {\n    readonly code: string;\n    readonly category: FailureCategory;\n    readonly lane: LaneKey;\n    readonly atMs: number;\n    readonly message: string;\n}',
+  },
+  {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
@@ -4673,6 +4747,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'RouteFacts',
+    declaration: 'export interface RouteFacts {\n    readonly provider: LaneKey;\n    readonly model: string;\n    readonly purpose: GenerateOptions[\'purpose\'];\n    readonly now: number;\n}',
+  },
+  {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
   },
@@ -4711,6 +4789,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduledToolPreparation',
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
+  },
+  {
+    name: 'SchedulerStatus',
+    declaration: 'export interface SchedulerStatus {\n    readonly lanes: readonly LaneView[];\n    readonly recentFailures: readonly RedactedFailure[];\n    readonly totalInFlight: number;\n    readonly totalQueued: number;\n}',
   },
   {
     name: 'Scoped',

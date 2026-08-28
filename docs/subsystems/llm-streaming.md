@@ -1008,6 +1008,36 @@ stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxllmscheduler--llmschedulerservice"></a>
+
+### `ctx.llmScheduler` — `LlmSchedulerService`
+
+Default-exported Service plugin: `ctx.llmScheduler.status()` is the public surface for queries; the `llm/scheduler-updated` event is the public surface for transitions.
+
+```ts cordis-catalog
+/**
+ * Configure one lane at runtime.
+ * @param key - provider route the lane admission policy applies to.
+ * @param config - enabled flag and concurrency bound for the lane.
+ */
+registerLane(key: LaneKey, config: LaneConfig): void
+
+/**
+ * Snapshot the scheduler's state.
+ * @returns the current per-lane availability, recent failures, and totals.
+ */
+@Remote('status') status(): SchedulerStatus
+
+/**
+ * Subscribe to status changes.
+ * @param listener - called with each debounced {@link SchedulerStatus} snapshot.
+ * @returns a disposer removing the listener.
+ */
+onStatusChange(listener: (status: SchedulerStatus) => void): () => void
+```
+
+Source: [`packages/llm/llm-scheduler/src/index.ts`](../../packages/llm/llm-scheduler/src/index.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events
@@ -1032,6 +1062,86 @@ The provider topology changed: an adapter registered or unregistered routes, or 
 ```
 
 Source: [`packages/llm/llm/src/types.ts`](../../packages/llm/llm/src/types.ts)
+
+<a id="llmscheduler-decide--bail"></a>
+
+#### `llm/scheduler-decide` — bail
+
+Consulted after every error finish before the built-in disposition: override how the failure is adjudicated (custom circuit windows, degradation with failover, per-provider overrides of the default table).
+
+Dispatch is `bail`: listeners run in registration order (prepend to run first) and the first listener returning a FailureDecision wins; return `undefined` or `false` to abstain. A `retarget` decision is executed by the gate itself: it releases the source slot, optionally opens the source circuit, and re-dispatches the call on the target lane (bounded by a per-call hop budget). Listeners must be synchronous and side-effect free; a listener that throws voids the whole consultation and the built-in disposition table (see `classifyFailure`/`decideFailure` in `./failure.ts`) applies.
+
+```ts cordis-catalog
+/**
+ * Consulted after every error finish before the built-in disposition:
+ * override how the failure is adjudicated (custom circuit windows,
+ * degradation with failover, per-provider overrides of the default table).
+ *
+ * Dispatch is `bail`: listeners run in registration order (prepend to run
+ * first) and the first listener returning a {@link FailureDecision} wins;
+ * return `undefined` or `false` to abstain. A `retarget` decision is
+ * executed by the gate itself: it releases the source slot, optionally
+ * opens the source circuit, and re-dispatches the call on the target lane
+ * (bounded by a per-call hop budget). Listeners must be synchronous and
+ * side-effect free; a listener that throws voids the whole consultation
+ * and the built-in disposition table (see `classifyFailure`/`decideFailure`
+ * in `./failure.ts`) applies.
+ *
+ * @mode bail
+ * @param facts - redacted failure facts; no secrets, no raw URLs.
+ * @returns the disposition to apply, or `undefined` to abstain.
+ */
+'llm/scheduler-decide'(facts: DecideFacts): FailureDecision | undefined
+```
+
+Source: [`packages/llm/llm-scheduler/src/types.ts`](../../packages/llm/llm-scheduler/src/types.ts)
+
+<a id="llmscheduler-route--bail"></a>
+
+#### `llm/scheduler-route` — bail
+
+Consulted before every admission: override the provider route this call dispatches on (time-of-day routing, maintenance windows, canary splits).
+
+Dispatch is `bail`: listeners run in registration order (prepend to run first) and the first listener returning a lane key wins; return `undefined` or `false` to abstain. The winning key rewrites `options.provider` in place before the adapter dispatches, so the reservation and the physical call stay on one lane. Listeners must be synchronous and side-effect free; a listener that throws voids the whole consultation and the call keeps its own provider.
+
+```ts cordis-catalog
+/**
+ * Consulted before every admission: override the provider route this call
+ * dispatches on (time-of-day routing, maintenance windows, canary splits).
+ *
+ * Dispatch is `bail`: listeners run in registration order (prepend to run
+ * first) and the first listener returning a lane key wins; return
+ * `undefined` or `false` to abstain. The winning key rewrites
+ * `options.provider` in place before the adapter dispatches, so the
+ * reservation and the physical call stay on one lane. Listeners must be
+ * synchronous and side-effect free; a listener that throws voids the whole
+ * consultation and the call keeps its own provider.
+ *
+ * @mode bail
+ * @param facts - routing-relevant call facts; no message content.
+ * @returns the lane key to dispatch on, or `undefined` to abstain.
+ */
+'llm/scheduler-route'(facts: RouteFacts): LaneKey | undefined
+```
+
+Source: [`packages/llm/llm-scheduler/src/types.ts`](../../packages/llm/llm-scheduler/src/types.ts)
+
+<a id="llmscheduler-updated--emit"></a>
+
+#### `llm/scheduler-updated` — emit
+
+Forwarded snapshot of SchedulerStatus after every status change.
+
+```ts cordis-catalog
+/**
+ * Forwarded snapshot of {@link SchedulerStatus} after every status change.
+ * @mode emit
+ * @param status - the latest snapshot, replaced atomically with each emission.
+ */
+'llm/scheduler-updated'(status: SchedulerStatus): void
+```
+
+Source: [`packages/llm/llm-scheduler/src/types.ts`](../../packages/llm/llm-scheduler/src/types.ts)
 
 <a id="llmstream--waterfall"></a>
 

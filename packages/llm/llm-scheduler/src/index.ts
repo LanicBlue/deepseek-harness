@@ -49,6 +49,7 @@ export { classifyFailure, decideFailure, redactFailureMessage } from './failure.
 export { FailureCategory, LaneStatus, Priority } from './types.ts'
 export type {
   AdmissionRejection,
+  DecideFacts,
   FailureDecision,
   LaneConfig,
   LaneCounters,
@@ -58,6 +59,7 @@ export type {
   RecoveryConfig,
   RedactedFailure,
   Reservation,
+  RouteFacts,
   SchedulerConfig,
   SchedulerStatus,
 } from './types.ts'
@@ -124,7 +126,11 @@ export class LlmSchedulerService extends TypertRemoteService {
     }, 'llm-scheduler: dispose plane, coordinator, and stream gate')
   }
 
-  /** Configure one lane at runtime. */
+  /**
+   * Configure one lane at runtime.
+   * @param key - provider route the lane admission policy applies to.
+   * @param config - enabled flag and concurrency bound for the lane.
+   */
   registerLane(key: LaneKey, config: LaneConfig): void {
     this.plane.registerLane(key, config)
   }
@@ -138,7 +144,11 @@ export class LlmSchedulerService extends TypertRemoteService {
     return this.plane.status()
   }
 
-  /** Subscribe to status changes; returns a disposer. */
+  /**
+   * Subscribe to status changes.
+   * @param listener - called with each debounced {@link SchedulerStatus} snapshot.
+   * @returns a disposer removing the listener.
+   */
   onStatusChange(listener: (status: SchedulerStatus) => void): () => void {
     this.statusListeners.add(listener)
     return () => {

@@ -285,7 +285,11 @@ export class Plane {
     this.recordFailure(key, failure.code, decision.category, nowMs, redactedMessage)
 
     switch (decision.kind) {
+      // A retarget that reaches the plane is one the gate chose not to execute
+      // (hop budget exhausted, or target equals source): record the failure,
+      // leave lane health as the gate's circuit hint already shaped it.
       case 'fail_call':
+      case 'retarget':
         this.publish()
         return { kind: 'failed_call' }
       case 'open_circuit': {

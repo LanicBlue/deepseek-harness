@@ -4,10 +4,13 @@
  *
  * Every streaming model call goes through `ctx.llm.stream(options)`; the
  * runtime emits `llm/stream` as a waterfall around each one. The stream gate
- * reserves a lane slot before the call dispatches and releases it (or applies
- * a failure disposition) once a finish chunk resolves. The physical attempt is
- * the waterfall's `next()`; settle keys off the stream protocol's finish
- * chunk kind.
+ * consults `llm/scheduler-route` listeners before admission (they may rewrite
+ * the provider in place), reserves a lane slot before the call dispatches, and
+ * releases it (or applies a failure disposition) once a finish chunk resolves;
+ * `llm/scheduler-decide` listeners may override that disposition, including
+ * re-dispatching the call on another lane. The physical attempt is the
+ * waterfall's `next()`; settle keys off the stream protocol's finish chunk
+ * kind.
  *
  * Cooldown timers tick on a low-frequency unref'd interval (no worker, no
  * leak on shutdown) so a circuit-open lane transitions back to probing as
@@ -22,13 +25,58 @@ import { LlmError } from '@deepseek-ai/dsh-llm'
 import { classifyFailure, decideFailure, redactFailureMessage } from './failure.ts'
 import { Coordinator, ReservationError } from './coordinator.ts'
 import { Plane } from './plane.ts'
-import type { LaneKey, PriorityByPurpose, RecoveryConfig } from './types.ts'
+import type { DecideFacts, FailureDecision, LaneKey, PriorityByPurpose, RecoveryConfig, RouteFacts } from './types.ts'
 import { FailureCategory, Priority } from './types.ts'
 
 /** Stream gate configuration. */
 export interface StreamGateConfig {
   priorityByPurpose: PriorityByPurpose
   recovery: RecoveryConfig
+}
+
+/**
+ * Maximum provider hops one logical call may take through decide-listener
+ * `retarget` decisions before the error stands. Guards against policy loops
+ * (A degrades to B while B degrades back to A).
+ */
+export const MAX_RETARGET_HOPS = 2
+
+/**
+ * Per-options-object retarget hop count. Only hops the gate itself launches
+ * are tracked; a fresh options object from any other source starts at zero.
+ */
+const retargetHops = new WeakMap<object, number>()
+
+/**
+ * Consult `llm/scheduler-route` listeners for one call. A listener that
+ * throws voids the consultation: the call keeps its own provider.
+ */
+function consultRoute(ctx: Context, options: GenerateOptions): LaneKey | undefined {
+  const facts: RouteFacts = {
+    provider: options.provider,
+    model: options.model,
+    purpose: options.purpose,
+    now: Date.now(),
+  }
+  try {
+    return ctx.bail('llm/scheduler-route', facts)
+  } catch (error) {
+    ctx.logger.warn('llm-scheduler: an llm/scheduler-route listener failed; keeping the call\'s own provider', error)
+    return undefined
+  }
+}
+
+/**
+ * Consult `llm/scheduler-decide` listeners for one error finish. A listener
+ * that throws voids the consultation: the built-in disposition table applies.
+ */
+function consultDecide(ctx: Context, facts: DecideFacts): FailureDecision | undefined {
+  try {
+    return ctx.bail('llm/scheduler-decide', facts)
+  } catch (error) {
+    ctx.logger.warn('llm-scheduler: an llm/scheduler-decide listener failed; applying the built-in disposition', error)
+    return undefined
+  }
 }
 
 /** Resolve the priority class for one call from its declared purpose. */
@@ -79,7 +127,13 @@ export function installStreamGate(
     options: GenerateOptions,
     next: () => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
-    const lane = laneKeyFor(options)
+    const routed = consultRoute(ctx, options)
+    if (routed !== undefined && routed !== options.provider) {
+      // Waterfall args flow by reference; the in-place rewrite is the only way
+      // downstream listeners and the adapter see the routed provider.
+      options.provider = routed
+    }
+    const lane = routed ?? laneKeyFor(options)
     const priority = priorityForPurpose(options.purpose, config.priorityByPurpose)
     plane.ensureLane(lane)
     let reservation
@@ -122,14 +176,35 @@ export function installStreamGate(
               const failure: LlmFailure = chunk.reason.failure
               const category = classifyFailure(failure)
               const nowMs = Date.now()
-              const decision = decideFailure(category, failure, config.recovery, nowMs)
-              plane.applyDecision(
-                decision,
-                lane,
-                failure,
-                nowMs,
-                redactFailureMessage(failure),
-              )
+              const redacted = redactFailureMessage(failure)
+              const facts: DecideFacts = {
+                failure: { code: failure.code, category, lane, atMs: nowMs, message: redacted },
+                now: nowMs,
+              }
+              const decision = consultDecide(ctx, facts)
+                ?? decideFailure(category, failure, config.recovery, nowMs)
+              const hops = retargetHops.get(options) ?? 0
+              if (decision.kind === 'retarget' && hops < MAX_RETARGET_HOPS && decision.to !== lane) {
+                // The source-lane record rides the circuit hint; the call
+                // itself moves on without surfacing this error finish.
+                plane.applyDecision(
+                  decision.openCircuitMs === undefined
+                    ? { kind: 'fail_call', category: decision.category }
+                    : { kind: 'open_circuit', category: decision.category, cooldownMs: decision.openCircuitMs },
+                  lane,
+                  failure,
+                  nowMs,
+                  redacted,
+                )
+                coordinator.release(reservation)
+                const nextOptions: GenerateOptions = { ...options, provider: decision.to }
+                retargetHops.set(nextOptions, hops + 1)
+                // Re-enters the llm/stream waterfall from the top: a fresh
+                // gate admission runs on the target lane.
+                yield* ctx.llm.stream(nextOptions)
+                return
+              }
+              plane.applyDecision(decision, lane, failure, nowMs, redacted)
               coordinator.release(reservation)
               yield chunk
               return

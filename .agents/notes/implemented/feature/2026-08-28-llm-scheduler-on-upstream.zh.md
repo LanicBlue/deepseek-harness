@@ -35,6 +35,17 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 
 物理尝试是 waterfall 的 `next()`；落定基于上游流协议的 finish chunk 种类。`stop|tool-calls|max-tokens|aborted` 释放槽位并向上传播 chunk。`error` 调用 `decideFailure(category, failure, recovery, nowMs)`，把裁决应用到 lane，然后释放。Harness 已经保证中央重试权：`pi-ai` 把 SDK `maxRetries` 钉在零，DeepSeek adapter 用原生 fetch。
 
+## 策略扩展面（bail 事件）
+
+按 Cordis「拦截和策略优先使用事件」的家规，两个决策点开放为 `bail` 事件，策略插件（含 agent 运行时定义的动态包）不改内核即可改写路由与裁决：
+
+- `llm/scheduler-route`——准入前咨询，胜出的 lane key 就地改写 `options.provider`（waterfall 参数按引用流动，adapter 在最内层才按 provider 解析，改写真实改变派发目标）。分时路由、维护窗口、金丝雀分流都挂这里。
+- `llm/scheduler-decide`——error finish 后、内置表前咨询。`{ kind: 'retarget', to, openCircuitMs? }` 决策由 gate 统一执行：记录源 lane 失败（按提示熔断）、释放源槽位、以 `{ ...options, provider: to }` 经 `ctx.llm.stream` 重新进入 waterfall（目标 lane 走全新准入）。每次调用最多 2 跳（`MAX_RETARGET_HOPS`，WeakMap 按 options 对象计跳），防 A↔B 回环；跳数耗尽按 `fail_call` 落定，error chunk 照常上抛。
+
+事件按注册顺序分发（`ctx.on(name, listener, true)` 插队优先）；监听器必须同步、无副作用；抛异常的监听器作废整次咨询（`ctx.logger.warn` 打点）并回退内置表。facts 只含路由/裁决字段（`RouteFacts`：provider/model/purpose/now；`DecideFacts`：脱敏后的 `RedactedFailure` + now），不携带消息内容与 plane 内部状态。
+
+这里刻意不用 registry service：策略不持有状态、不需要按 id 撤销单个贡献，`ctx.on` 的 effect 生命周期已经给了装卸即生效即回退；bail 的「首个非空返回值获胜」就是全部优先级模型。
+
 ## 恢复是进程存活态
 
 冷却定时器、指数回退（`initialCooldownMs` 以 `maxCooldownMs` 为上限，连续探测失败翻倍）、`probing` 状态发布、探测预约都活在服务类里。Plane 仍掌握每一个可用性迁移。unref'd `setInterval`（500ms）推进 plane 的时钟；每当 lane 越过它的冷却，就把 lane 从 `CIRCUIT_OPEN` 转到 `PROBING`，并把优先级最高的排队等待者升格为探测尝试。成功探测使 lane 返回 `HEALTHY`；失败探测把冷却翻倍并重新熔断。配置级阻塞永不自动恢复。
@@ -44,7 +55,7 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 - 跨 provider failover 不在范围（out of scope；未来 `agent/request` 策略下配置回退链）。
 - 按 owner 的优先级语义——`P0`-`P4` 从 `purpose` 派生（`compaction`、`session-title`，其余即 conversation），而不是从持久化 owner 类型，所以映射比原版控制面更粗。
 - 持久化重试预算——重试计数完全留在 `dsh-llm-retry` 的 session 事件里；plane 的瞬态预算只以探测失败回退的形式存在。
-- Retarget API——plane 保留一个尚无调用的 API 面，给未来的回退链。
+- Retarget API——已落地为 `llm/scheduler-decide` 的 `retarget` 决策（gate 执行改道，见「策略扩展面」）；持久化的按路由回退链仍留给未来 `agent/request` 策略。
 
 ## 拒绝的方案
 
@@ -63,6 +74,6 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 
 ## 测试
 
-33 个单元测试，分布在 `failure.spec.ts`（分类 + 决策策略 + providerRetryAfterMs）、`plane.spec.ts`（admit/queue/release/decision/cooldown/probe recovery）、`coordinator.spec.ts`（异步 reserve/release 流程、signal abort、disposeAll）。
+42 个单元测试，分布在 `failure.spec.ts`（分类 + 决策策略 + providerRetryAfterMs）、`plane.spec.ts`（admit/queue/release/decision/cooldown/probe recovery）、`coordinator.spec.ts`（异步 reserve/release 流程、signal abort、disposeAll）、`policy.spec.ts`（路由改写与就地 provider 重写、retarget 改道与 2 跳上限、同 lane retarget 退化为 fail_call、裁决覆盖、route/decide 监听器异常隔离回退）。
 
 不复制覆盖测试（没有 `*-coverage.spec.ts` 孪生兄弟）——聚焦行为测试描述行为而非正确性。

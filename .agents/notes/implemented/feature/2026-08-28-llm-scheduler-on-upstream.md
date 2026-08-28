@@ -35,6 +35,17 @@ Adapters already classify provider errors into stable `LlmFailure` codes (`TRANS
 
 The physical attempt is the waterfall's `next()`; settle keys off the upstream stream protocol's finish chunk kind. `stop|tool-calls|max-tokens|aborted` releases the slot and propagates the chunk. `error` calls `decideFailure(category, failure, recovery, nowMs)`, applies the disposition to the lane, then releases. The harness already guarantees central retry authority: `pi-ai` pins SDK `maxRetries` to zero and the DeepSeek adapter uses raw fetch.
 
+## Policy extension surface (bail events)
+
+Following the Cordis house rule that interception and policy go through events, the two decision points are open as `bail` events: policy plugins (including dynamic packages an agent defines at runtime) reshape routing and adjudication without touching the kernel:
+
+- `llm/scheduler-route` — consulted before admission; the winning lane key rewrites `options.provider` in place (waterfall args flow by reference and the adapter resolves its provider at the innermost step, so the rewrite genuinely changes dispatch). Time-of-day routing, maintenance windows, and canary splits all hook here.
+- `llm/scheduler-decide` — consulted after an error finish, before the built-in table. A `{ kind: 'retarget', to, openCircuitMs? }` decision is executed by the gate: record the source-lane failure (opening the circuit when hinted), release the source slot, and re-enter the waterfall via `ctx.llm.stream({ ...options, provider: to })` (a fresh admission runs on the target lane). At most 2 hops per call (`MAX_RETARGET_HOPS`, counted per options object in a WeakMap) guard against A↔B loops; once spent, the decision settles as `fail_call` and the error chunk propagates.
+
+Events dispatch in listener-registration order (`ctx.on(name, listener, true)` prepends); listeners must be synchronous and side-effect free; a listener that throws voids the whole consultation (logged via `ctx.logger.warn`) and the built-in table applies. Facts carry routing/adjudication fields only (`RouteFacts`: provider/model/purpose/now; `DecideFacts`: the redacted `RedactedFailure` plus now) — never message content or plane internals.
+
+A registry service was deliberately not used: policies hold no state and need no per-id retraction, `ctx.on`'s effect lifecycle already gives mount-and-unmount semantics for free, and bail's first-non-empty-return-wins is the entire priority model.
+
 ## Recovery is process-live
 
 Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCooldownMs`, doubling per consecutive probe failure), `probing` publication, and probe reservation all live in the service class. The plane still owns every availability transition. The unref'd `setInterval` (500ms) advances the plane's clock; on every lane that crosses its cooldown, the lane transitions `CIRCUIT_OPEN` to `PROBING` and the highest-priority queued waiter is promoted as the probe attempt. A successful probe returns the lane to `HEALTHY`; a failed probe doubles the cooldown and reopens the circuit. Configuration-scope blocks never auto-recover.
@@ -44,7 +55,7 @@ Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCool
 - Cross-provider failover stays out (out of scope; future `agent/request` policy with configured fallback chain).
 - Per-owner priority semantics — `P0`-`P4` derive from `purpose` (`compaction`, `session-title`, else conversation), not from durable owner types, so the mapping is coarser than the original control plane.
 - Durable retry budgets — retry counting stays in `dsh-llm-retry`'s session events; the plane's transient budget exists only as probe-failure backoff.
-- Retarget API — the plane reserves one API surface for a future fallback chain that nothing calls yet.
+- Retarget API — shipped as the `retarget` decision kind on `llm/scheduler-decide`, executed by the gate (see the policy extension surface); durable per-route fallback chains remain future `agent/request` work.
 
 ## Rejected alternatives
 
@@ -63,6 +74,6 @@ Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCool
 
 ## Tests
 
-33 unit tests across `failure.spec.ts` (classification + decision policy + providerRetryAfterMs), `plane.spec.ts` (admit/queue/release/decision/cooldown/probe recovery), `coordinator.spec.ts` (async reserve/release flow, signal abort, disposeAll).
+42 unit tests across `failure.spec.ts` (classification + decision policy + providerRetryAfterMs), `plane.spec.ts` (admit/queue/release/decision/cooldown/probe recovery), `coordinator.spec.ts` (async reserve/release flow, signal abort, disposeAll), `policy.spec.ts` (route override with in-place provider rewrite, retarget re-dispatch with the 2-hop cap, same-lane retarget degrading to fail_call, disposition override, and exception isolation falling back for both events).
 
 Coverage is intentionally not duplicated (no `*-coverage.spec.ts` siblings) — focused behavior tests describe behavior, not correctness.

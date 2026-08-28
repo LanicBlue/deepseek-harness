@@ -28,17 +28,39 @@ Cooldown recovery requalifies lanes through real traffic, never synthetic health
 
 Unconfigured lanes schedule unlimited — the default composition changes no behavior until a lane is configured.
 
-## Model experience
+## Policy extension events
 
-None: the scheduler gates and forwards; it neither assembles nor sends provider requests. It is not in any model request's data path, nor in any model's output.
+The scheduler opens its two decision points as Cordis `bail` events: policy plugins (including dynamic packages an agent defines at runtime) listen and reshape routing and adjudication without forking this package:
 
-#### KV cache impact
+- `llm/scheduler-route` — consulted before every admission. A listener returning a lane key reroutes the call (time-of-day routing, maintenance windows, canary splits); return `undefined` or `false` to abstain. The winning key rewrites `options.provider` in place, so the reservation and the physical dispatch stay on one lane.
+- `llm/scheduler-decide` — consulted after every error finish, before the built-in disposition table. A listener returning a `FailureDecision` wins; `{ kind: 'retarget', to, openCircuitMs? }` is executed by the gate itself: it releases the source slot, opens the source circuit when hinted, and re-admits the call on the target lane (bounded to 2 hops per call, guarding against policy loops).
 
-None: the scheduler neither assembles nor sends provider requests.
+Both events dispatch in listener-registration order (`ctx.on(name, listener, true)` prepends); listeners must be synchronous and side-effect free, and a listener that throws voids the whole consultation, falling back to the built-in behavior. Event facts carry routing/adjudication fields only, and failure facts arrive redacted.
+
+```ts
+// A time-of-day routing policy plugin (host half; the same code mounts
+// unchanged as a dynamic package or a patch row).
+import type { Context } from '@deepseek-ai/cordis'
+
+export function apply(ctx: Context): void {
+  ctx.on('llm/scheduler-route', facts =>
+    isOfficePeak(facts.now) && facts.provider === 'deepseek-official'
+      ? 'deepseek-backup'
+      : undefined)
+}
+```
+
+## Model Experience
+
+None, as the scheduler gates and forwards stream chunks — it neither assembles nor sends provider requests and never enters any model request's data path or output.
+
+#### KV Cache effect
+
+None, as the scheduler neither assembles nor sends provider requests.
 
 ## Known Limitations and Deferred Work
 
 - **Cross-provider failover** stays out: a degraded lane parks callers; route switching belongs to a future `agent/request` policy with a configured fallback chain.
 - **Per-owner priority semantics.** The original derives `P0`-`P4` from durable owner types; the harness exposes only `purpose` (`compaction`, `session-title`, else conversation), so the mapping is purpose-to-class, configurable but coarser: a session's background subagent calls share `P1` with its interactive turns.
 - **Durable retry budgets in the plane.** Retry counting stays entirely in `dsh-llm-retry`'s session events; the plane's transient budget exists only as probe-failure backoff.
-- **Re-target API.** The plane reserves one API surface that nothing calls yet, kept for a future fallback chain.
+- **Configured fallback chains** stay out for now: `retarget` executes listener-directed hops on failure (see `llm/scheduler-decide`), but a durable per-route fallback chain belongs to a future `agent/request` policy.
