@@ -1,6 +1,14 @@
+---
+description: "模型调用准入调度器，供配置 per-provider lane、优先级、冷却恢复与策略扩展事件的用户与维护者阅读。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-scheduler`
 
 [English](README.md) | 中文
+
+<a id="summary"></a>
+## 概述
 
 服务插件：把每一次模型调用经 `llm/stream` waterfall 上的进程内准入平面调度。每个调用在 adapter 边界之前预约一个 per-provider lane 槽位；lane 以 `P0`-`P4` 优先级 FIFO 施加有界并发，物理失败按 scope 降级 lane 或路由可用性，并用冷却探测让真实排队中的 waiter 重新合格。状态是进程存活态：重启即开启新的观察周期，发起请求的 agent turn 与进程同亡，不会悬挂。
 
@@ -28,6 +36,15 @@
 
 未配置的 lane 不限并发——默认组合在配置 lane 之前不改变任何行为。
 
+## 目录
+
+- [概述](#summary)
+- [策略扩展事件](#policy-extension-events)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="policy-extension-events"></a>
 ## 策略扩展事件
 
 调度器把两个决策点开放为 Cordis `bail` 事件：策略插件（含 agent 运行时定义的动态包）监听事件即可改写路由与裁决，不必 fork 本包：
@@ -41,15 +58,19 @@
 // A time-of-day routing policy plugin (host half; the same code mounts
 // unchanged as a dynamic package or a patch row).
 import type { Context } from '@deepseek-ai/cordis'
+import type { RouteFacts } from '@deepseek-ai/dsh-llm-scheduler/types'
 
 export function apply(ctx: Context): void {
-  ctx.on('llm/scheduler-route', facts =>
-    isOfficePeak(facts.now) && facts.provider === 'deepseek-official'
+  ctx.on('llm/scheduler-route', (facts: RouteFacts) => {
+    const hour = new Date(facts.now).getUTCHours()
+    return hour >= 9 && hour < 18 && facts.provider === 'deepseek-official'
       ? 'deepseek-backup'
-      : undefined)
+      : undefined
+  })
 }
 ```
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无。调度器只做准入与转发——既不组装也不发送 provider 请求，不在任何模型请求的数据路径上，也不出现在任何模型的输出里。
@@ -58,9 +79,20 @@ export function apply(ctx: Context): void {
 
 无。调度器既不组装也不发送 provider 请求。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **跨 provider failover** 不在范围：降级 lane 把调用者挂停；路由切换属于未来 `agent/request` 策略下的配置回退链。
 - **按 owner 的优先级语义。** 原版从持久化 owner 类型派生 `P0`-`P4`；本 harness 只暴露 `purpose`（`compaction`、`session-title`，其余即 conversation），因此映射是 purpose 到类别，可配置但更粗：一个 session 的后台子代理调用与交互轮次共享 `P1`。
 - **持久化重试预算留在 plane。** 重试计数完全放在 `dsh-llm-retry` 的 session 事件里；plane 的瞬态预算只以探测失败回退的形式存在。
 - **配置化回退链**暂不做：`retarget` 已可执行监听器指定的失败改道（见 `llm/scheduler-decide`），但持久化的按路由回退链属于未来 `agent/request` 策略。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+plane 是同步纯状态机；coordinator 把它的出队桥接到异步等待者；stream gate 是 `llm/stream` 上唯一的监听器。设置变更实时重应用（`applySettings`），lane 注册跟随 `llm/adapters-updated`。中止的排队等待者必须同时离开 pending 表与 plane 队列——见 `Plane.removeWaiter`——否则幽灵会虚增 `queued` 并吞掉释放的槽位。
+
+</details>

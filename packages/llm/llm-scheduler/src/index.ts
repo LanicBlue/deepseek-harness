@@ -22,16 +22,18 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import z from '@deepseek-ai/schemastery'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type {} from 'zod'
 import { Coordinator } from './coordinator.ts'
 import { Plane } from './plane.ts'
 import {
-  Config,
   DEFAULT_SCHEDULER_SETTINGS,
   laneConfigFromEntry,
+  PRIORITY_CLASS,
   prioritiesFromSettings,
   SCHEDULER_SETTINGS_NAMESPACE,
+  UNLIMITED_CONCURRENCY,
   type SchedulerSettings,
 } from './settings.ts'
 import { installStreamGate, type StreamGateConfig } from './stream-gate.ts'
@@ -66,7 +68,6 @@ export type {
 export { laneId, reservationId } from './brand.ts'
 export type { LaneId, ReservationId } from './brand.ts'
 export {
-  Config,
   DEFAULT_SCHEDULER_SETTINGS,
   SCHEDULER_SETTINGS_NAMESPACE,
   UNLIMITED_CONCURRENCY,
@@ -75,6 +76,24 @@ export {
   priorityFromClass,
 } from './settings.ts'
 export type { PriorityClass, SchedulerLaneEntry, SchedulerPurpose, SchedulerSettings } from './settings.ts'
+
+/** Schema of the `llm-scheduler` settings section and the plugin Config. */
+export const Config: z<SchedulerSettings> = z.object({
+  lanes: z.dict(z.object({
+    enabled: z.boolean().default(true),
+    maxConcurrency: z.number().step(1).min(1).default(UNLIMITED_CONCURRENCY),
+  })).default({}),
+  priorityByPurpose: z.object({
+    conversation: PRIORITY_CLASS.default('P1'),
+    compaction: PRIORITY_CLASS.default('P0'),
+    'session-title': PRIORITY_CLASS.default('P4'),
+  }).default(DEFAULT_SCHEDULER_SETTINGS.priorityByPurpose),
+  recovery: z.object({
+    initialCooldownMs: z.number().step(1).min(100).default(5_000),
+    maxCooldownMs: z.number().step(1).min(1_000).default(300_000),
+  }).default(DEFAULT_SCHEDULER_SETTINGS.recovery),
+  statusDebounceMs: z.number().step(1).min(0).default(250),
+})
 
 /**
  * Default-exported Service plugin: `ctx.llmScheduler.status()` is the public

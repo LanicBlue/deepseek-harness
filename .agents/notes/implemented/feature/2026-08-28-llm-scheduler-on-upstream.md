@@ -57,7 +57,11 @@ Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCool
 - Durable retry budgets — retry counting stays in `dsh-llm-retry`'s session events; the plane's transient budget exists only as probe-failure backoff.
 - Retarget API — shipped as the `retarget` decision kind on `llm/scheduler-decide`, executed by the gate (see the policy extension surface); durable per-route fallback chains remain future `agent/request` work.
 
-## Rejected alternatives
+## Consequences
+
+Model calls are bounded per provider with shared health: a saturation cascade on one lane no longer starves compaction and title calls behind interactive traffic, and the Settings Scheduling page observes the live plane. The scheduler ships inert by default (unconfigured lanes schedule unlimited), so enabling it is a settings action, not a composition change. Later work opened the two policy bail events (`llm/scheduler-route`, `llm/scheduler-decide`) on top of this kernel.
+
+## Alternatives considered
 
 - A local HTTP proxy (the cc-switch-s-route shape) — cannot see priority or purpose, couples queue lifetime to a desktop app process.
 - Loop changes for admission (an `agent/pre-request` gate) — rejected by the plugins-not-loop-changes rule; `llm/stream` already sees every call including compaction, titles, and hand-written `ctx.llm.stream()` calls.

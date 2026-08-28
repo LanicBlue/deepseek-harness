@@ -71,7 +71,7 @@ function makeHarness(
       const listeners = name === 'llm/scheduler-route' ? routeListeners : decideListeners
       for (const listener of listeners) {
         const result = listener(facts as RouteFacts & DecideFacts)
-        if (result !== null && result !== false && result !== undefined) return result
+        if (result !== null && result !== undefined) return result
       }
       return undefined
     },

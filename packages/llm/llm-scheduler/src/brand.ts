@@ -12,12 +12,20 @@ export type LaneId = Branded<'LlmSchedulerLaneId'>
 /** Unique identifier for one admitted reservation. */
 export type ReservationId = Branded<'LlmSchedulerReservationId'>
 
-/** Cast a string into a {@link LaneId}. Construction only — comparison is plain string equality. */
+/**
+ *  Cast a string into a {@link LaneId}. Construction only — comparison is plain string equality.
+ * @param value - the lane key.
+ * @returns the branded LaneId.
+*/
 export function laneId(value: string): LaneId {
   return value as LaneId
 }
 
-/** Cast a string into a {@link ReservationId}. Construction only. */
+/**
+ *  Cast a string into a {@link ReservationId}. Construction only.
+ * @param value - the reservation key.
+ * @returns the branded ReservationId.
+*/
 export function reservationId(value: string): ReservationId {
   return value as ReservationId
 }

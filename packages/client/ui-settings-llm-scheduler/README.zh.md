@@ -1,6 +1,14 @@
+---
+description: "Web Settings 的模型调用调度页，供配置 lane 并发上限、观察实时准入平面的用户与维护者阅读。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-llm-scheduler
 
 [English](README.md) | 中文
+
+<a id="summary"></a>
+## 概述
 
 Web 设置中的模型调用调度面板。浏览器插件注册一个 id 为 `scheduler` 的本地化 `settings.section` 贡献，并拥有整个页面：基于 `llm-scheduler` 设置命名空间的配置区，以及只读的运行时观测区。
 
@@ -8,6 +16,14 @@ Web 设置中的模型调用调度面板。浏览器插件注册一个 id 为 `s
 
 观测区在首次打开时读取一次 `llmScheduler.status`，此后随转发的 `llm/scheduler-updated` 通知（仅状态）以及 `llm/adapters-updated` 或 `connection/reset`（整个面板，且首次打开前绝不拉取）刷新。页面渲染通道表（可用性徽标、执行中与排队计数、并发上限）以及脱敏后的最近失败列表。未加载调度插件的 Host 组合不会挂载本页。
 
+## 目录
+
+- [概述](#summary)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为本分区渲染的是浏览器配置与观测界面；不触达任何模型请求。
@@ -16,7 +32,19 @@ Web 设置中的模型调用调度面板。浏览器插件注册一个 id 为 `s
 
 无；本包既不组装也不发送提供方请求。
 
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **`statusDebounceMs` 不在此编辑** —— 面板只编辑调度页所需的字段（`lanes`、`priorityByPurpose`、`recovery`）；去抖窗口仍留在 `settings.yaml`。
 - **无历史** —— 运行时区只显示当前快照；保留的最近失败是 Host 侧有界脱敏列表，没有聚合或时间线。
+
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+store 以一个 generation 计数器汇合两个独立加载（provider 目录、调度器观测）；推送的 `llm/scheduler-updated` 通知只刷新观测，而 `llm/adapters-updated` 与 `connection/reset` 重载整个面板——首次显式打开之前绝不触发。lane 行由目录加上存储段的 key 推导，孤立覆盖因此始终可编辑。
+
+</details>

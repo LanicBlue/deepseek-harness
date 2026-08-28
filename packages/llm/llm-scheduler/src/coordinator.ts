@@ -25,9 +25,12 @@ interface PendingReservation {
   readonly signal: AbortSignal | undefined
 }
 
-/** Error thrown when a reservation is denied or cancelled. */
+/** Error thrown when a reservation is denied or cancelled.
+*/
 export class ReservationError extends Error {
+  /** Lane the denied or cancelled reservation targeted. */
   readonly lane: LaneKey
+  /** Failure category behind the denial, when one applied. */
   readonly category: FailureCategory | undefined
   constructor(message: string, lane: LaneKey, category: FailureCategory | undefined) {
     super(message)
@@ -53,7 +56,11 @@ export class Coordinator {
    * Reserve a slot. Resolves immediately on success, parks in priority FIFO
    * when the lane is at capacity, rejects when the lane is disabled,
    * blocked, or the caller's signal aborts.
-   */
+    * @param lane - lane key to reserve on.
+ * @param priority - caller priority class.
+ * @param signal - caller cancellation; aborts a parked waiter.
+ * @returns the granted reservation.
+*/
   async reserve(lane: LaneKey, priority: Priority, signal?: AbortSignal): Promise<Reservation> {
     if (signal?.aborted) {
       throw new ReservationError(`reservation aborted before admission for lane "${lane}"`, lane, undefined)
@@ -120,7 +127,8 @@ export class Coordinator {
    * success.
    *
    * Called by the plugin after the plane reports a cooldown elapse.
-   */
+    * @param lane - lane whose cooldown just elapsed.
+*/
   promoteProbeWaiter(lane: LaneKey): void {
     const reservation = this.plane.takeProbe(lane)
     if (!reservation) return
@@ -131,7 +139,8 @@ export class Coordinator {
   /**
    * Reject every pending reservation. Used at plugin disposal so no waiter
    * hangs after the fiber is torn down.
-   */
+    * @param reason - rejection message every parked waiter receives.
+*/
   disposeAll(reason: string): void {
     for (const [lane, list] of this.pending.entries()) {
       for (const entry of list) {

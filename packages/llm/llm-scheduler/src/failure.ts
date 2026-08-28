@@ -116,7 +116,11 @@ export function decideFailure(
   }
 }
 
-/** Stable redaction helper for {@link LlmFailure.message}: trims and clamps length, strips nothing else. */
+/**
+ *  Stable redaction helper for {@link LlmFailure.message}: trims and clamps length, strips nothing else.
+ * @param failure - immutable provider-neutral failure facts.
+ * @returns the trimmed, length-clamped summary.
+*/
 export function redactFailureMessage(failure: LlmFailure): string {
   const trimmed = failure.message.trim()
   if (trimmed.length <= 200) return trimmed

@@ -116,7 +116,8 @@ function reservationAsLlmError(error: ReservationError): LlmError {
  * @param coordinator - reservation coordinator backed by `plane`.
  * @param plane - admission state machine (used for failure disposition).
  * @param config - gate configuration.
- */
+  * @returns a disposer that detaches the listener, stops the ticker, and rejects pending reservations.
+*/
 export function installStreamGate(
   ctx: Context,
   coordinator: Coordinator,

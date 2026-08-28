@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-settings-llm-scheduler/README.md
-README.md: ca55dfbbecd07c6c0d126d086540f20644377937
-README.zh.md: 136a357ab103477fdb5d23c96e71b8cdc9f07871
+README.md: 1f6216a05e106bb13647625742664bb3179b708e
+README.zh.md: 16f76c1bc2d60c003bb5e265039426deeec4f684

@@ -26,19 +26,31 @@ export type SchedulerPurpose = 'conversation' | 'compaction' | 'session-title'
 
 /** One provider lane override as stored in the settings section. */
 export interface SchedulerLaneEntry {
+  /** Whether the lane accepts new admissions. */
   enabled: boolean
+  /** Maximum concurrent in-flight calls; `UNLIMITED_CONCURRENCY` means unbounded. */
   maxConcurrency: number
 }
 
 /** User-settings and composition document for the scheduler plugin. */
 export interface SchedulerSettings {
+  /** Purpose-to-priority mapping applied at admission. */
   priorityByPurpose: Record<SchedulerPurpose, PriorityClass>
+  /** Per-provider lane overrides; absent keys use the enabled unlimited default. */
   lanes: Record<string, SchedulerLaneEntry>
-  recovery: { initialCooldownMs: number; maxCooldownMs: number }
+  /** Cooldown recovery bounds. */
+  recovery: {
+    /** Initial cooldown after the first transient failure. */
+    initialCooldownMs: number
+    /** Hard cap on the exponential backoff. */
+    maxCooldownMs: number
+  }
+  /** Debounce window for `llm/scheduler-updated` emissions; 0 emits immediately. */
   statusDebounceMs: number
 }
 
-const PRIORITY_CLASS = z.union(['P0', 'P1', 'P2', 'P3', 'P4'] as const)
+/** Schema of one `P0`–`P4` scheduling class. */
+export const PRIORITY_CLASS = z.union(['P0', 'P1', 'P2', 'P3', 'P4'] as const)
 
 /** Defaults applied when composition or the stored section omits a field. */
 export const DEFAULT_SCHEDULER_SETTINGS: SchedulerSettings = {
@@ -48,25 +60,11 @@ export const DEFAULT_SCHEDULER_SETTINGS: SchedulerSettings = {
   statusDebounceMs: 250,
 }
 
-/** Schema of the `llm-scheduler` settings section and the plugin Config. */
-export const Config: z<SchedulerSettings> = z.object({
-  lanes: z.dict(z.object({
-    enabled: z.boolean().default(true),
-    maxConcurrency: z.number().step(1).min(1).default(UNLIMITED_CONCURRENCY),
-  })).default({}),
-  priorityByPurpose: z.object({
-    conversation: PRIORITY_CLASS.default('P1'),
-    compaction: PRIORITY_CLASS.default('P0'),
-    'session-title': PRIORITY_CLASS.default('P4'),
-  }).default(DEFAULT_SCHEDULER_SETTINGS.priorityByPurpose),
-  recovery: z.object({
-    initialCooldownMs: z.number().step(1).min(100).default(5_000),
-    maxCooldownMs: z.number().step(1).min(1_000).default(300_000),
-  }).default(DEFAULT_SCHEDULER_SETTINGS.recovery),
-  statusDebounceMs: z.number().step(1).min(0).default(250),
-})
-
-/** Map a stored `P0`–`P4` class onto the plane's numeric priority. */
+/**
+ *  Map a stored `P0`–`P4` class onto the plane's numeric priority.
+ * @param value - the stored `P0`–`P4` class.
+ * @returns the plane numeric priority.
+*/
 export function priorityFromClass(value: PriorityClass): Priority {
   switch (value) {
     case 'P0': return Priority.P0
@@ -77,7 +75,11 @@ export function priorityFromClass(value: PriorityClass): Priority {
   }
 }
 
-/** Project settings priorities onto the stream-gate mapping. */
+/**
+ *  Project settings priorities onto the stream-gate mapping.
+ * @param settings - the stored settings document.
+ * @returns the stream-gate priority mapping.
+*/
 export function prioritiesFromSettings(settings: SchedulerSettings): PriorityByPurpose {
   return {
     conversation: priorityFromClass(settings.priorityByPurpose.conversation),
@@ -90,7 +92,9 @@ export function prioritiesFromSettings(settings: SchedulerSettings): PriorityByP
 /**
  * Project one stored lane entry onto plane config. An absent entry is an
  * enabled unlimited lane; `UNLIMITED_CONCURRENCY` becomes unbounded.
- */
+  * @param entry - the stored lane entry, when present.
+ * @returns the plane lane config.
+*/
 export function laneConfigFromEntry(entry: SchedulerLaneEntry | undefined): LaneConfig {
   if (entry === undefined) return { enabled: true }
   return {

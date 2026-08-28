@@ -68,7 +68,10 @@ export const MIN_MAX_COOLDOWN_MS = 1_000
 /**
  * Effective lane values one configuration row shows: an absent entry is an
  * enabled lane with unlimited concurrency.
- */
+  * @param settings - stored section, when loaded.
+ * @param providerId - lane key the row edits.
+ * @returns the effective enabled/concurrency pair for the row.
+*/
 export function effectiveLane(
   settings: SchedulerSettings | undefined,
   providerId: string,
@@ -89,7 +92,11 @@ export interface LaneEdit {
 /**
  * Next `lanes` value after one row edit. A row whose effective values match
  * the absent-route defaults drops its entry entirely.
- */
+  * @param settings - stored section, when loaded.
+ * @param providerId - lane key the edit applies to.
+ * @param edit - the row edit; `unlimited` names the empty concurrency field.
+ * @returns the next `lanes` value with the edit applied.
+*/
 export function nextLanes(
   settings: SchedulerSettings | undefined,
   providerId: string,
@@ -126,7 +133,11 @@ export interface SchedulerPanelState {
   view: SchedulerStatusView | undefined
 }
 
-/** Human text for a rejected wire call. */
+/**
+ *  Human text for a rejected wire call.
+ * @param error - a rejected wire call.
+ * @returns human text for the rejection.
+*/
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -231,13 +242,19 @@ export class SchedulerPanelStore {
   }
 }
 
-/** Refetch the runtime view only after its first load. */
+/**
+ *  Refetch the runtime view only after its first load.
+ * @param controller - the panel store to refresh.
+*/
 export function refreshIfLoaded(controller: SchedulerPanelStore): void {
   if (controller.store.getSnapshot().observation === 'idle') return
   void controller.refreshObservation()
 }
 
-/** Reload the whole panel only after its first load. */
+/**
+ *  Reload the whole panel only after its first load.
+ * @param controller - the panel store to reload.
+*/
 export function reloadIfLoaded(controller: SchedulerPanelStore): void {
   if (controller.store.getSnapshot().observation === 'idle') return
   void controller.load()
@@ -256,7 +273,10 @@ export interface ConfigRow {
  * lane key the stored section still carries. A route the adapter marks
  * `declared: false` is catalog possibility and appears only once a stored
  * lane entry names it.
- */
+  * @param providers - the configurable-provider directory.
+ * @param settings - stored section, when loaded.
+ * @returns the configuration area row universe.
+*/
 export function configRows(
   providers: readonly LlmConfigurableProvider[],
   settings: SchedulerSettings | undefined,

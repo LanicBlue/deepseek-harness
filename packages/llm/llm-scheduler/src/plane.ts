@@ -134,7 +134,12 @@ export class Plane {
     }
   }
 
-  /** Register one lane. Existing registrations are replaced. */
+  /**
+ *  Register one lane. Existing registrations are replaced.
+ * @param key - lane key the policy applies to.
+ * @param config - enabled flag and concurrency bound.
+ * @returns the lane id.
+*/
   registerLane(key: LaneKey, config: LaneConfig): LaneId {
     const id = makeLaneId(key)
     const existing = this.lanes.get(id)
@@ -170,14 +175,19 @@ export class Plane {
   /**
    * Register an enabled unlimited lane when the key is unknown; otherwise
    * return the existing id without changing its policy.
-   */
+    * @param key - lane key to look up or register.
+ * @returns the existing or freshly minted lane id.
+*/
   ensureLane(key: LaneKey): LaneId {
     const existing = this.byKey.get(key)
     if (existing !== undefined) return existing
     return this.registerLane(key, { enabled: true })
   }
 
-  /** Unregister one lane, dropping its queue and refusing further admissions. */
+  /**
+ *  Unregister one lane, dropping its queue and refusing further admissions.
+ * @param id - lane id to remove.
+*/
   unregisterLane(id: LaneId): void {
     const record = this.lanes.get(id)
     if (!record) return
@@ -186,7 +196,11 @@ export class Plane {
     this.publish()
   }
 
-  /** Get the lane id for a key, or `undefined` when unknown. */
+  /**
+ *  Get the lane id for a key, or `undefined` when unknown.
+ * @param key - lane key to look up.
+ * @returns the lane id, or `undefined` when unknown.
+*/
   laneIdFor(key: LaneKey): LaneId | undefined {
     return this.byKey.get(key)
   }
@@ -199,7 +213,8 @@ export class Plane {
    * @param key - lane key (provider route id).
    * @param priority - caller's priority class.
    * @returns the admission outcome; see {@link AdmitOutcome}.
-   */
+    * @param nowMs - monotonic timestamp anchoring the cooldown check.
+*/
   admit(key: LaneKey, priority: Priority, nowMs: number): AdmitOutcome {
     const id = this.byKey.get(key)
     if (!id) {
@@ -270,7 +285,8 @@ export class Plane {
    * @param failure - the source {@link import('@deepseek-ai/dsh-llm').LlmFailure}.
    * @param nowMs - monotonic timestamp anchoring the decision.
    * @param redactedMessage - already-redacted human-readable summary.
-   */
+    * @returns the transition the caller should forward to listeners.
+*/
   applyDecision(
     decision: FailureDecision,
     key: LaneKey,
@@ -360,7 +376,9 @@ export class Plane {
    * Peek the highest-priority queued waiter without removing them, for probe
    * dispatch. The caller is responsible for {@link Plane.takeProbe} after the
    * probe is actually issued.
-   */
+    * @param key - lane key whose head waiter to peek.
+ * @returns the highest-priority queued waiter, when one exists.
+*/
   peekProbe(key: LaneKey): QueuedWaiter | undefined {
     const id = this.byKey.get(key)
     const lane = id ? this.lanes.get(id) : undefined
@@ -421,7 +439,9 @@ export class Plane {
    * {@link LaneStatus.BLOCKED_CONFIG} with the given category. Configuration
    * blocks never auto-recover; only {@link Plane.registerLane} with `enabled:
    * true` resets the lane.
-   */
+    * @param key - lane key to block.
+ * @param nowMs - monotonic timestamp anchoring the block.
+*/
   blockManually(key: LaneKey, nowMs: number): void {
     const id = this.byKey.get(key)
     const lane = id ? this.lanes.get(id) : undefined
@@ -432,14 +452,22 @@ export class Plane {
     this.publish()
   }
 
-  /** Counter snapshot for one lane (used for instrumentation). */
+  /**
+ *  Counter snapshot for one lane (used for instrumentation).
+ * @param id - lane id to read.
+ * @returns the lane counter snapshot, or `undefined` when unknown.
+*/
   countersFor(id: LaneId): LaneCounters | undefined {
     const lane = this.lanes.get(id)
     if (!lane) return undefined
     return { inFlight: lane.inFlight.size, queued: lane.queue.length }
   }
 
-  /** Subscribe to status changes; returns a disposer. */
+  /**
+ *  Subscribe to status changes; returns a disposer.
+ * @param listener - called with every published snapshot.
+ * @returns a disposer removing the listener.
+*/
   onStatusChange(listener: (status: SchedulerStatus) => void): () => void {
     this.statusListeners.add(listener)
     return () => {
@@ -447,7 +475,10 @@ export class Plane {
     }
   }
 
-  /** Compute the current snapshot. */
+  /**
+ *  Compute the current snapshot.
+ * @returns the current snapshot.
+*/
   status(): SchedulerStatus {
     const lanes: LaneView[] = []
     let totalInFlight = 0

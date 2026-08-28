@@ -57,7 +57,11 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 - 持久化重试预算——重试计数完全留在 `dsh-llm-retry` 的 session 事件里；plane 的瞬态预算只以探测失败回退的形式存在。
 - Retarget API——已落地为 `llm/scheduler-decide` 的 `retarget` 决策（gate 执行改道，见「策略扩展面」）；持久化的按路由回退链仍留给未来 `agent/request` 策略。
 
-## 拒绝的方案
+## 后果
+
+模型调用按 provider 受限并共享健康视图：单 lane 的饱和级联不再让 compaction 与 title 调用饿死在交互流量之后，Settings 的 Scheduling 页可观察实时 plane。调度器默认惰性出厂（未配置的 lane 不限并发），启用它是 settings 动作而非组合变更。后续工作在此内核之上开放了两个策略 bail 事件（`llm/scheduler-route`、`llm/scheduler-decide`）。
+
+## 备选方案
 
 - 本地 HTTP proxy（cc-switch 形）——看不到 priority 或 purpose，把队列寿命绑到桌面 app 进程。
 - Loop 改造做准入（`agent/pre-request` gate）——被「plugin-not-loop」规则否决；`llm/stream` 已经看到每一次调用，包括 compaction、title 与手写的 `ctx.llm.stream()` 调用。

@@ -1374,6 +1374,47 @@ export type Config = Readonly<Record<string, never>>
 
 来源：[`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
 
+<a id="deepseek-aidsh-llm-scheduler"></a>
+
+## `@deepseek-ai/dsh-llm-scheduler`
+
+需要：`llm`
+
+```ts config-catalog
+/** User-settings and composition document for the scheduler plugin. */
+export interface SchedulerSettings {
+  /** Purpose-to-priority mapping applied at admission. */
+  priorityByPurpose: Record<SchedulerPurpose, PriorityClass>
+  /** Per-provider lane overrides; absent keys use the enabled unlimited default. */
+  lanes: Record<string, SchedulerLaneEntry>
+  /** Cooldown recovery bounds. */
+  recovery: {
+    /** Initial cooldown after the first transient failure. */
+    initialCooldownMs: number
+    /** Hard cap on the exponential backoff. */
+    maxCooldownMs: number
+  }
+  /** Debounce window for `llm/scheduler-updated` emissions; 0 emits immediately. */
+  statusDebounceMs: number
+}
+
+/** Provider-neutral request purposes the scheduler assigns priorities to. */
+export type SchedulerPurpose = 'conversation' | 'compaction' | 'session-title'
+
+/** Scheduling priority classes, in admission order. */
+export type PriorityClass = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
+
+/** One provider lane override as stored in the settings section. */
+export interface SchedulerLaneEntry {
+  /** Whether the lane accepts new admissions. */
+  enabled: boolean
+  /** Maximum concurrent in-flight calls; `UNLIMITED_CONCURRENCY` means unbounded. */
+  maxConcurrency: number
+}
+```
+
+来源：[`packages/llm/llm-scheduler/src/settings.ts:36`](../packages/llm/llm-scheduler/src/settings.ts)
+
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
 ## `@deepseek-ai/dsh-lsp-stdio`
@@ -2779,6 +2820,28 @@ export interface Config {
 
 来源：[`packages/lsp/tool-lsp/src/index.ts:57`](../packages/lsp/tool-lsp/src/index.ts)
 
+<a id="deepseek-aidsh-tool-ps"></a>
+
+## `@deepseek-ai/dsh-tool-ps`
+
+需要：`tools` · `systemPrompt`
+
+```ts config-catalog
+/** Plugin config — every field optional; `apply` fills env and file defaults. */
+export interface Config {
+  /** PS base URL. Defaults to `$PS_BASE_URL`, then the credential file, then `http://127.0.0.1:7600`. */
+  baseUrl?: string
+  /** Explicit Bearer key override; falls back to the credential file, then `$DSH_PS_API_KEY`. */
+  apiKey?: string
+  /** Consumer credential file (`{clientKey, baseUrl}`). Defaults to `~/.project-service/config/dsh.json`; optional. */
+  credentialFile?: string
+  /** Per-request timeout. Defaults to 10,000 ms. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/integrations/tool-ps/src/index.ts:37`](../packages/integrations/tool-ps/src/index.ts)
+
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -3028,6 +3091,30 @@ export interface Config {
 ```
 
 来源：[`packages/web/tool-web/src/index.ts:37`](../packages/web/tool-web/src/index.ts)
+
+<a id="deepseek-aidsh-tool-wk"></a>
+
+## `@deepseek-ai/dsh-tool-wk`
+
+需要：`tools` · `systemPrompt`
+
+```ts config-catalog
+/** Plugin config — every field optional; `apply` fills env and file defaults. */
+export interface Config {
+  /** WK data root holding `config/`. Defaults to `~/.wiki-service`, then `$WIKI_SERVER_DATA_ROOT`. */
+  dataRoot?: string
+  /** Consumer credential file (`{clientKey, baseUrl}`). Defaults to `<dataRoot>/config/dsh.json`. */
+  credentialFile?: string
+  /** Explicit base URL override; skips credential-file discovery for the address. */
+  baseUrl?: string
+  /** Explicit Bearer key override; falls back to the credential file, then `$DSH_WK_API_KEY`. */
+  apiKey?: string
+  /** Per-request timeout. Defaults to 10,000 ms. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/integrations/tool-wk/src/index.ts:44`](../packages/integrations/tool-wk/src/index.ts)
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 
@@ -3366,6 +3453,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-session`（[`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-settings-llm-scheduler`（[`packages/client/ui-settings-llm-scheduler/src/index.ts`](../packages/client/ui-settings-llm-scheduler/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory`（[`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugins`（[`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts)）

@@ -1,6 +1,13 @@
+---
+description: "The model-call admission scheduler for users and maintainers configuring per-provider lanes, priorities, cooldown recovery, and policy extension events."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-scheduler`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Service plugin that schedules every model call through an in-process admission plane on the `llm/stream` waterfall. Each call reserves a per-provider lane slot before the adapter boundary; lanes enforce bounded concurrency with priority-FIFO ordering over `P0`-`P4`, and physical failures degrade lane or route availability with cooldown probes that requalify real queued waiters. State is process-live: a restart starts a fresh observation epoch, and the requesting agent turns die with the process, so nothing strands.
 
@@ -28,6 +35,14 @@ Cooldown recovery requalifies lanes through real traffic, never synthetic health
 
 Unconfigured lanes schedule unlimited — the default composition changes no behavior until a lane is configured.
 
+## Table of Contents
+
+- [Summary](#summary)
+- [Policy extension events](#policy-extension-events)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
 ## Policy extension events
 
 The scheduler opens its two decision points as Cordis `bail` events: policy plugins (including dynamic packages an agent defines at runtime) listen and reshape routing and adjudication without forking this package:
@@ -41,12 +56,15 @@ Both events dispatch in listener-registration order (`ctx.on(name, listener, tru
 // A time-of-day routing policy plugin (host half; the same code mounts
 // unchanged as a dynamic package or a patch row).
 import type { Context } from '@deepseek-ai/cordis'
+import type { RouteFacts } from '@deepseek-ai/dsh-llm-scheduler/types'
 
 export function apply(ctx: Context): void {
-  ctx.on('llm/scheduler-route', facts =>
-    isOfficePeak(facts.now) && facts.provider === 'deepseek-official'
+  ctx.on('llm/scheduler-route', (facts: RouteFacts) => {
+    const hour = new Date(facts.now).getUTCHours()
+    return hour >= 9 && hour < 18 && facts.provider === 'deepseek-official'
       ? 'deepseek-backup'
-      : undefined)
+      : undefined
+  })
 }
 ```
 
@@ -64,3 +82,13 @@ None, as the scheduler neither assembles nor sends provider requests.
 - **Per-owner priority semantics.** The original derives `P0`-`P4` from durable owner types; the harness exposes only `purpose` (`compaction`, `session-title`, else conversation), so the mapping is purpose-to-class, configurable but coarser: a session's background subagent calls share `P1` with its interactive turns.
 - **Durable retry budgets in the plane.** Retry counting stays entirely in `dsh-llm-retry`'s session events; the plane's transient budget exists only as probe-failure backoff.
 - **Configured fallback chains** stay out for now: `retarget` executes listener-directed hops on failure (see `llm/scheduler-decide`), but a durable per-route fallback chain belongs to a future `agent/request` policy.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Maintainer working context — click to expand</summary>
+
+The plane is a synchronous pure state machine; the coordinator bridges its drain to async waiters; the stream gate is the only listener on `llm/stream`. Settings changes re-apply live (`applySettings`), and lane registration follows `llm/adapters-updated`. An aborted queued waiter must leave BOTH the pending map and the plane queue — see `Plane.removeWaiter` — or ghosts inflate `queued` and swallow freed slots.
+
+</details>
