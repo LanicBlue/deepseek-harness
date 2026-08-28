@@ -14,9 +14,9 @@ Cooldown recovery requalifies lanes through real traffic, never synthetic health
 - name: '@deepseek-ai/dsh-llm-scheduler'
   config:
     priorityByPurpose:
-      compaction: 0
-      conversation: 1
-      'session-title': 4
+      compaction: P0
+      conversation: P1
+      'session-title': P4
     lanes:
         openai:
           enabled: true

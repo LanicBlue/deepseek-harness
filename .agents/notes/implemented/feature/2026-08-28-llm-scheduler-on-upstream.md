@@ -57,8 +57,9 @@ Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCool
 - `packages/llm/llm-scheduler/src/coordinator.ts` — async bridge, cancelable Promise resolutions, disposeAll on plugin unload.
 - `packages/llm/llm-scheduler/src/stream-gate.ts` — `llm/stream` waterfall listener, settle by finish chunk kind, reservation error → `LlmError` mapping for stable upstream code dispatch.
 - `packages/llm/llm-scheduler/src/failure.ts` — `classifyFailure` and `decideFailure` policy tables.
-- `packages/llm/llm-scheduler/src/index.ts` — Service plugin, default-exports `LlmSchedulerService` extending `cordisService`.
+- `packages/llm/llm-scheduler/src/index.ts` — Service plugin, default-exports `LlmSchedulerService` extending `TypertRemoteService` with `@Remote('status')`, the `llm-scheduler` settings section, and auto-registration of lanes from `ctx.llm.listProviders()` plus first-use `ensureLane`.
 - `packages/llm/llm-scheduler/src/invariant.ts` — empty installer with package-specific `No runtime invariant:` reason: process-live state has no durable boundary to check.
+- `packages/client/ui-settings-llm-scheduler` — Web Settings Scheduling page over `ctx.remote.llmScheduler.status()` and the bound settings scope.
 
 ## Tests
 

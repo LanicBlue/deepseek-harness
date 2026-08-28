@@ -1,0 +1,355 @@
+/* Model-scheduling settings section, in the settings-panel design language:
+ * 14/22 body, 12/18 caption, 32px fields, `border-l2` hairlines — the same
+ * vocabulary ModelsSection and the Button/Input primitives use.
+ *
+ * Every color resolves through a `--dsw-alias-*` token. Bare `--border` /
+ * `--surface` / `--text-*` names, which nothing in this app defines, would
+ * render the light-mode literals written as their fallbacks and stay light
+ * under the dark theme. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.intro {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.blockTitle {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.subTitle {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.failureBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* ── tables ─────────────────────────────────────────────────────────────── */
+
+.table {
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+}
+
+.tableCaption {
+  caption-side: top;
+  text-align: left;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.table th[scope='col'] {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.tableBody th,
+.tableBody td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  vertical-align: middle;
+}
+
+.cellStrong {
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+.cellNumber {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.emptyCell {
+  padding: 12px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* The configuration lanes table keeps its rows roomy: the name cell stacks
+   display name over route id, and the two control cells stay narrow. */
+.laneNameCell {
+  min-width: 160px;
+}
+
+.laneName {
+  display: block;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.laneId,
+.modelId {
+  display: block;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.laneCell {
+  white-space: nowrap;
+}
+
+.checkbox {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+/* ── fields ─────────────────────────────────────────────────────────────── */
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.numberField {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.numberInput {
+  max-width: 120px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field .input,
+.fieldGrid .input {
+  max-width: 240px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Select variant of .input: replaces the OS arrow with the shared 12px
+   chevron inset; the right pad reserves its cell (same asset as the Models
+   page — data-URI SVGs cannot resolve CSS variables). */
+.selectInput {
+  appearance: none;
+  padding-right: 32px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+
+/* ── observation badges ─────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.badge[data-tone='healthy'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.badge[data-tone='degraded'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.badge[data-tone='probing'] {
+  color: var(--dsw-alias-brand-primary);
+}
+
+.badge[data-tone='circuitOpen'],
+.badge[data-tone='blocked'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Unknown wire vocabularies stay readable without claiming a state color. */
+.badge[data-tone='unknown'],
+.badge[data-tone='plain'] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.badge[data-tone='hard'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.badge[data-tone='transient'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.tag {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.codeText {
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.observation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The retry affordance takes the dense capsule (Button `.sm`). */
+.secondaryButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.secondaryButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+/* Column captions stay visible while the header row of the lanes config
+   table is not (its inputs carry indexed accessible names already). */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

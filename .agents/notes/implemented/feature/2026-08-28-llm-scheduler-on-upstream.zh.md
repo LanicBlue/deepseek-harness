@@ -57,8 +57,9 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 - `packages/llm/llm-scheduler/src/coordinator.ts` ——异步桥接、可取消的 Promise 决议、插件卸载时的 disposeAll。
 - `packages/llm/llm-scheduler/src/stream-gate.ts` ——`llm/stream` waterfall 监听器，按 finish chunk 种类落定，预约错误 → `LlmError` 映射以保证上游码 dispatch 稳定。
 - `packages/llm/llm-scheduler/src/failure.ts` ——`classifyFailure` 与 `decideFailure` 策略表。
-- `packages/llm/llm-scheduler/src/index.ts` ——Service 插件，默认导出 `LlmSchedulerService`，继承自 `cordisService`。
+- `packages/llm/llm-scheduler/src/index.ts` ——Service 插件，默认导出 `LlmSchedulerService`，继承自 `TypertRemoteService` 并带 `@Remote('status')`、`llm-scheduler` 设置段，以及从 `ctx.llm.listProviders()` 自动注册 lane 加上首次使用时的 `ensureLane`。
 - `packages/llm/llm-scheduler/src/invariant.ts` ——空 installer，带包级「无 runtime invariant」原因：进程存活态没有持久化边界可校验。
+- `packages/client/ui-settings-llm-scheduler` ——Web Settings 的 Scheduling 页，基于 `ctx.remote.llmScheduler.status()` 与绑定的设置 scope。
 
 ## 测试
 

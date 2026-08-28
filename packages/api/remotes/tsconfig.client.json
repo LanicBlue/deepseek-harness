@@ -49,6 +49,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/llm-scheduler"
+    },
+    {
       "path": "../../preset/agent-presets"
     },
     {

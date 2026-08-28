@@ -87,18 +87,20 @@ export interface LaneView {
   readonly id: LaneId
   /** Provider route key. */
   readonly key: LaneKey
+  /** Whether the lane currently accepts new admissions. */
+  readonly enabled: boolean
   /** Current availability state. */
   readonly status: LaneStatus
-  /** Configured maximum concurrency (`undefined` means unbounded). */
-  readonly maxConcurrency: number | undefined
+  /** Configured maximum concurrency. Omit for unbounded. */
+  readonly maxConcurrency?: number
   /** Reservations currently in flight. */
   readonly inFlight: number
   /** Callers queued behind the lane's concurrency limit. */
   readonly queued: number
   /** Wall-clock millisecond timestamp at which the circuit re-arms, when known. */
-  readonly cooldownUntilMs?: number | undefined
+  readonly cooldownUntilMs?: number
   /** Most recent decision category for diagnostics. */
-  readonly lastCategory?: FailureCategory | undefined
+  readonly lastCategory?: FailureCategory
 }
 
 /** Redacted failure fact safe to surface to UI and session events. */
@@ -129,12 +131,25 @@ export interface SchedulerStatus {
 
 /** Configurable mapping from call purpose to priority class. */
 export interface PriorityByPurpose {
+  /** Priority applied to ordinary conversation calls (purpose unset). */
+  conversation?: Priority
   /** Priority applied to compaction-purpose calls. */
   compaction?: Priority
   /** Priority applied to session-title-purpose calls. */
   'session-title'?: Priority
   /** Fallback priority when purpose is absent or unconfigured. */
   fallback?: Priority
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Forwarded snapshot of {@link SchedulerStatus} after every status change.
+     * @mode emit
+     * @param status - the latest snapshot, replaced atomically with each emission.
+     */
+    'llm/scheduler-updated'(status: SchedulerStatus): void
+  }
 }
 
 /** Cooldown recovery parameters. */

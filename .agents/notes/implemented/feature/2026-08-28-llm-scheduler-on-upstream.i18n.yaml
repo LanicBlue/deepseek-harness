@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-28-llm-scheduler-on-upstream.md
-2026-08-28-llm-scheduler-on-upstream.md: 3ef568f6aaffc93d43f85a40f43c60126d185a56
-2026-08-28-llm-scheduler-on-upstream.zh.md: a7d886423f70f6430847da32892a9f195d152a7b
+2026-08-28-llm-scheduler-on-upstream.md: e7c98596bbba2dab86c8ba3da1203fc7c292d3a1
+2026-08-28-llm-scheduler-on-upstream.zh.md: a170f64ef06c31a3da1b6d0f088c39fe7c7ed3ef

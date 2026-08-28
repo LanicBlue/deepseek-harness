@@ -140,6 +140,12 @@ export class Plane {
     const existing = this.lanes.get(id)
     if (existing) {
       existing.config = config
+      if (config.enabled && existing.status === LaneStatusEnum.BLOCKED_CONFIG) {
+        existing.status = LaneStatusEnum.HEALTHY
+        existing.lastCategory = undefined
+        existing.cooldownUntilMs = 0
+      }
+      this.publish()
       return id
     }
     const record: LaneRecord = {
@@ -157,7 +163,18 @@ export class Plane {
     }
     this.lanes.set(id, record)
     this.byKey.set(key, id)
+    this.publish()
     return id
+  }
+
+  /**
+   * Register an enabled unlimited lane when the key is unknown; otherwise
+   * return the existing id without changing its policy.
+   */
+  ensureLane(key: LaneKey): LaneId {
+    const existing = this.byKey.get(key)
+    if (existing !== undefined) return existing
+    return this.registerLane(key, { enabled: true })
   }
 
   /** Unregister one lane, dropping its queue and refusing further admissions. */
@@ -166,6 +183,7 @@ export class Plane {
     if (!record) return
     this.lanes.delete(id)
     this.byKey.delete(record.key)
+    this.publish()
   }
 
   /** Get the lane id for a key, or `undefined` when unknown. */
@@ -214,7 +232,7 @@ export class Plane {
     // Healthy lane with cooldown elapsed (or never opened) or a probing lane:
     // both can accept one admission if there is capacity.
     if (lane.config.maxConcurrency === undefined || lane.inFlight.size < lane.config.maxConcurrency) {
-      return { kind: 'admitted', reservation: this.grantReservation(lane) }
+      return { kind: 'admitted', reservation: this.grantReservation(lane, priority) }
     }
     return {
       kind: 'queued',
@@ -237,7 +255,9 @@ export class Plane {
     const lane = id ? this.lanes.get(id) : undefined
     if (!lane) return { promote: undefined }
     lane.inFlight.delete(reservation.id)
-    return { promote: this.popHighestPriority(lane) }
+    const promote = this.popHighestPriority(lane)
+    this.publish()
+    return { promote }
   }
 
   /**
@@ -266,6 +286,7 @@ export class Plane {
 
     switch (decision.kind) {
       case 'fail_call':
+        this.publish()
         return { kind: 'failed_call' }
       case 'open_circuit': {
         const next = Math.min(decision.cooldownMs, this.recovery.maxCooldownMs)
@@ -273,16 +294,19 @@ export class Plane {
         lane.cooldownUntilMs = nowMs + next
         lane.currentCooldownMs = next
         lane.lastCategory = decision.category
+        this.publish()
         return { kind: 'opened', untilMs: lane.cooldownUntilMs }
       }
       case 'block_until_time':
         lane.status = LaneStatusEnum.CIRCUIT_OPEN
         lane.cooldownUntilMs = decision.untilMs
         lane.lastCategory = decision.category
+        this.publish()
         return { kind: 'blocked', untilMs: lane.cooldownUntilMs }
       case 'block_config':
         lane.status = LaneStatusEnum.BLOCKED_CONFIG
         lane.lastCategory = decision.category
+        this.publish()
         return { kind: 'blocked_config', status: lane.status }
     }
   }
@@ -303,6 +327,7 @@ export class Plane {
         transitioned.push(lane.id)
       }
     }
+    if (transitioned.length > 0) this.publish()
     return transitioned
   }
 
@@ -355,6 +380,7 @@ export class Plane {
       lane.cooldownUntilMs = 0
       lane.consecutiveProbeFailures = 0
       lane.currentCooldownMs = this.recovery.initialCooldownMs
+      this.publish()
       return
     }
     lane.consecutiveProbeFailures += 1
@@ -362,6 +388,7 @@ export class Plane {
     lane.status = LaneStatusEnum.CIRCUIT_OPEN
     lane.cooldownUntilMs = nowMs + doubled
     lane.currentCooldownMs = doubled
+    this.publish()
   }
 
   /**
@@ -377,6 +404,7 @@ export class Plane {
     lane.status = LaneStatusEnum.BLOCKED_CONFIG
     lane.lastCategory = FailureCategory.BLOCKED_MANUAL
     lane.cooldownUntilMs = nowMs
+    this.publish()
   }
 
   /** Counter snapshot for one lane (used for instrumentation). */
@@ -405,14 +433,13 @@ export class Plane {
       const view: LaneView = {
         id: lane.id,
         key: lane.key,
+        enabled: lane.config.enabled,
         status: lane.status,
-        maxConcurrency: lane.config.maxConcurrency,
         inFlight: lane.inFlight.size,
         queued: lane.queue.length,
-        lastCategory: lane.lastCategory,
-      }
-      if (lane.cooldownUntilMs > 0) {
-        ;(view as { cooldownUntilMs?: number }).cooldownUntilMs = lane.cooldownUntilMs
+        ...lane.config.maxConcurrency !== undefined ? { maxConcurrency: lane.config.maxConcurrency } : {},
+        ...lane.cooldownUntilMs > 0 ? { cooldownUntilMs: lane.cooldownUntilMs } : {},
+        ...lane.lastCategory !== undefined ? { lastCategory: lane.lastCategory } : {},
       }
       lanes.push(view)
     }
@@ -449,6 +476,7 @@ export class Plane {
       sequence: lane.sequence,
     }
     this.insertByPriority(lane, waiter)
+    this.publish()
     return waiter.id
   }
 
@@ -476,15 +504,21 @@ export class Plane {
     return lane.queue.shift()
   }
 
-  /** Issue one reservation against an unoccupied slot. */
-  private grantReservation(lane: LaneRecord): Reservation {
+  /** Notify {@link Plane.onStatusChange} listeners of the current snapshot. */
+  private publish(): void {
+    const status = this.status()
+    for (const listener of this.statusListeners) listener(status)
+  }
+
+  private grantReservation(lane: LaneRecord, priority: Priority): Reservation {
     const reservation: Reservation = {
       id: makeReservationId(),
       lane: lane.key,
-      priority: Priority.P2,
+      priority,
       admittedAt: Date.now(),
     }
     lane.inFlight.add(reservation.id)
+    this.publish()
     return reservation
   }
 
@@ -497,6 +531,7 @@ export class Plane {
       admittedAt: Date.now(),
     }
     lane.inFlight.add(reservation.id)
+    this.publish()
     return reservation
   }
 }

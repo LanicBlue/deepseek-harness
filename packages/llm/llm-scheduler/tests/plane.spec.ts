@@ -37,6 +37,16 @@ describe('Plane.admit', () => {
     }
   })
 
+  it('ensureLane registers an unlimited enabled lane on first use', () => {
+    const plane = new Plane({})
+    plane.ensureLane('openai')
+    const outcome = plane.admit('openai', Priority.P0, 0)
+    expect(outcome.kind).toBe('admitted')
+    if (outcome.kind === 'admitted') expect(outcome.reservation.priority).toBe(Priority.P0)
+    expect(plane.status().lanes[0]?.enabled).toBe(true)
+    expect(plane.status().lanes[0]?.maxConcurrency).toBeUndefined()
+  })
+
   it('rejects a disabled lane', () => {
     const plane = new Plane({})
     plane.registerLane('openai', { enabled: false })

@@ -27,8 +27,8 @@ import { FailureCategory, Priority } from './types.ts'
 
 /** Stream gate configuration. */
 export interface StreamGateConfig {
-  readonly priorityByPurpose: PriorityByPurpose
-  readonly recovery: RecoveryConfig
+  priorityByPurpose: PriorityByPurpose
+  recovery: RecoveryConfig
 }
 
 /** Resolve the priority class for one call from its declared purpose. */
@@ -38,7 +38,8 @@ function priorityForPurpose(
 ): Priority {
   if (purpose === 'compaction' && config.compaction !== undefined) return config.compaction
   if (purpose === 'session-title' && config['session-title'] !== undefined) return config['session-title']
-  return config.fallback ?? Priority.P2
+  if (config.conversation !== undefined) return config.conversation
+  return config.fallback ?? Priority.P1
 }
 
 /** Lane key is the registered provider route id today. */
@@ -80,6 +81,7 @@ export function installStreamGate(
   ): AsyncIterable<StreamChunk> {
     const lane = laneKeyFor(options)
     const priority = priorityForPurpose(options.purpose, config.priorityByPurpose)
+    plane.ensureLane(lane)
     let reservation
     try {
       reservation = await coordinator.reserve(lane, priority, options.signal)
