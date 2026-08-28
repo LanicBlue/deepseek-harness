@@ -74,6 +74,6 @@ Harness 对模型调用没有任何准入控制：任意数量的并发 session�
 
 ## 测试
 
-42 个单元测试，分布在 `failure.spec.ts`（分类 + 决策策略 + providerRetryAfterMs）、`plane.spec.ts`（admit/queue/release/decision/cooldown/probe recovery）、`coordinator.spec.ts`（异步 reserve/release 流程、signal abort、disposeAll）、`policy.spec.ts`（路由改写与就地 provider 重写、retarget 改道与 2 跳上限、同 lane retarget 退化为 fail_call、裁决覆盖、route/decide 监听器异常隔离回退）。
+45 个单元测试，分布在 `failure.spec.ts`（分类 + 决策策略 + providerRetryAfterMs）、`plane.spec.ts`（admit/queue/release/decision/cooldown/probe recovery）、`coordinator.spec.ts`（异步 reserve/release 流程、signal abort、中止等待者不留队列幽灵、探测升格交付等待者、探测成功/失败落定、disposeAll）、`policy.spec.ts`（路由改写与就地 provider 重写、retarget 改道与 2 跳上限、同 lane retarget 退化为 fail_call、裁决覆盖、route/decide 监听器异常隔离回退）。
 
 不复制覆盖测试（没有 `*-coverage.spec.ts` 孪生兄弟）——聚焦行为测试描述行为而非正确性。

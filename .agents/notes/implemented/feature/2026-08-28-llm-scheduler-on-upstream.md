@@ -74,6 +74,6 @@ Cooldown timers, the exponential backoff (`initialCooldownMs` capped at `maxCool
 
 ## Tests
 
-42 unit tests across `failure.spec.ts` (classification + decision policy + providerRetryAfterMs), `plane.spec.ts` (admit/queue/release/decision/cooldown/probe recovery), `coordinator.spec.ts` (async reserve/release flow, signal abort, disposeAll), `policy.spec.ts` (route override with in-place provider rewrite, retarget re-dispatch with the 2-hop cap, same-lane retarget degrading to fail_call, disposition override, and exception isolation falling back for both events).
+45 unit tests across `failure.spec.ts` (classification + decision policy + providerRetryAfterMs), `plane.spec.ts` (admit/queue/release/decision/cooldown/probe recovery), `coordinator.spec.ts` (async reserve/release flow, signal abort, aborted waiters leaving no queue ghosts, probe promotion delivering the waiter, probe success/failure settle, disposeAll), `policy.spec.ts` (route override with in-place provider rewrite, retarget re-dispatch with the 2-hop cap, same-lane retarget degrading to fail_call, disposition override, and exception isolation falling back for both events).
 
 Coverage is intentionally not duplicated (no `*-coverage.spec.ts` siblings) — focused behavior tests describe behavior, not correctness.

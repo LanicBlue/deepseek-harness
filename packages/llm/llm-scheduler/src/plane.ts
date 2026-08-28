@@ -336,6 +336,27 @@ export class Plane {
   }
 
   /**
+   * Remove one queued waiter (a caller whose signal aborted while parked).
+   * Without this the queue keeps ghost entries: {@link Plane.status} would
+   * over-report `queued`, and a later {@link Plane.release} could pop the
+   * ghost as the promote candidate, silently dropping the freed slot.
+   *
+   * @param key - lane key holding the waiter.
+   * @param waiterId - the waiter id returned by the queuing {@link Plane.admit}.
+   * @returns whether a waiter was removed.
+   */
+  removeWaiter(key: LaneKey, waiterId: ReservationId): boolean {
+    const id = this.byKey.get(key)
+    const lane = id ? this.lanes.get(id) : undefined
+    if (!lane) return false
+    const index = lane.queue.findIndex(waiter => waiter.id === waiterId)
+    if (index === -1) return false
+    lane.queue.splice(index, 1)
+    this.publish()
+    return true
+  }
+
+  /**
    * Peek the highest-priority queued waiter without removing them, for probe
    * dispatch. The caller is responsible for {@link Plane.takeProbe} after the
    * probe is actually issued.

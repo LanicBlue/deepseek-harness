@@ -196,7 +196,7 @@ export function installStreamGate(
                   nowMs,
                   redacted,
                 )
-                coordinator.release(reservation)
+                coordinator.release(reservation, false)
                 const nextOptions: GenerateOptions = { ...options, provider: decision.to }
                 retargetHops.set(nextOptions, hops + 1)
                 // Re-enters the llm/stream waterfall from the top: a fresh
@@ -205,7 +205,7 @@ export function installStreamGate(
                 return
               }
               plane.applyDecision(decision, lane, failure, nowMs, redacted)
-              coordinator.release(reservation)
+              coordinator.release(reservation, false)
               yield chunk
               return
             }
