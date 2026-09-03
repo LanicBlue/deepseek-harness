@@ -233,7 +233,7 @@ export function installStreamGate(
       if (view) coordinator.promoteProbeWaiter(view.key)
     }
   }, 500)
-  interval.unref?.()
+  interval.unref()
 
   return () => {
     disposeListener()

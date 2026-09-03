@@ -185,6 +185,7 @@ describe('SchedulerPanelStore', () => {
 
   it('a non-Error rejection still renders a message', async () => {
     const { face } = api({
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the store must survive non-Error rejections
       providers: () => Promise.reject('plain string'),
     })
     const store = new SchedulerPanelStore(face)

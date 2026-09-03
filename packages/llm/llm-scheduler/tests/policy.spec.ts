@@ -119,7 +119,7 @@ afterEach(() => {
 describe('policy events', () => {
   it('releases on a clean stop finish with no listeners', async () => {
     const harness = makeHarness(() => single(stopFinish))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     const chunks = await harness.dispatch(makeOptions('openai'))
     expect(chunks).toEqual([stopFinish])
     expect(harness.plane.status().totalInFlight).toBe(0)
@@ -129,7 +129,7 @@ describe('policy events', () => {
   it('routes a call onto another lane and the adapter sees the rewrite', async () => {
     const facts: RouteFacts[] = []
     const harness = makeHarness(() => single(stopFinish))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     harness.onRoute((f) => {
       facts.push(f)
       return f.provider === 'openai' ? 'backup' : undefined
@@ -147,7 +147,7 @@ describe('policy events', () => {
 
   it('keeps the call provider when the route listener throws', async () => {
     const harness = makeHarness(() => single(stopFinish))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     harness.onRoute(() => { throw new Error('policy bug') })
     const options = makeOptions('openai')
     const chunks = await harness.dispatch(options)
@@ -160,7 +160,7 @@ describe('policy events', () => {
   it('executes a decide retarget: source circuit opens, call re-dispatches on the target', async () => {
     const harness = makeHarness(call =>
       call === 0 ? single(errorFinish('TRANSPORT')) : single(stopFinish))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     const seen: DecideFacts[] = []
     harness.onDecide((facts) => {
       seen.push(facts)
@@ -185,7 +185,7 @@ describe('policy events', () => {
 
   it('caps retarget hops and surfaces the error once the budget is spent', async () => {
     const harness = makeHarness(() => single(errorFinish('TRANSPORT')))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     // openai -> backup -> openai -> budget spent on the third dispatch.
     harness.onDecide(facts => ({
       kind: 'retarget',
@@ -201,7 +201,7 @@ describe('policy events', () => {
 
   it('treats a retarget onto the same lane as a plain failed call', async () => {
     const harness = makeHarness(() => single(errorFinish('TRANSPORT')))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     harness.onDecide(facts => ({
       kind: 'retarget',
       category: FailureCategory.TRANSIENT,
@@ -218,7 +218,7 @@ describe('policy events', () => {
 
   it('lets a decide listener override the built-in disposition', async () => {
     const harness = makeHarness(() => single(errorFinish('TRANSPORT')))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     harness.onDecide(facts => ({
       kind: 'open_circuit',
       category: facts.failure.category,
@@ -235,7 +235,7 @@ describe('policy events', () => {
 
   it('falls back to the built-in table when a decide listener throws', async () => {
     const harness = makeHarness(() => single(errorFinish('TRANSPORT')))
-    disposers.push(harness.dispose)
+    disposers.push(() => { harness.dispose() })
     harness.onDecide(() => { throw new Error('policy bug') })
     const chunks = await harness.dispatch(makeOptions('openai'))
     expect(chunks).toEqual([errorFinish('TRANSPORT')])

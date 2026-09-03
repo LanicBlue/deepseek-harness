@@ -83,7 +83,7 @@ export class Coordinator {
       list.push(entry)
       this.pending.set(lane, list)
       if (signal) {
-        const onAbort = (): void => this.cancelWaiter(lane, entry)
+        const onAbort = (): void => { this.cancelWaiter(lane, entry) }
         if (signal.aborted) {
           onAbort()
           return
@@ -161,7 +161,7 @@ export class Coordinator {
     const entry = removed[0]
     if (entry === undefined) return
     const granted: Reservation = {
-      id: waiter.id as Reservation['id'],
+      id: waiter.id,
       lane: waiter.lane,
       priority: waiter.priority,
       admittedAt: Date.now(),

@@ -132,7 +132,7 @@ export class LlmSchedulerService extends TypertRemoteService {
       priorityByPurpose: prioritiesFromSettings(resolved),
       recovery: { ...resolved.recovery },
     }
-    const unsubscribe = this.plane.onStatusChange(status => this.notify(status))
+    const unsubscribe = this.plane.onStatusChange((status) => { this.notify(status) })
     this.streamGateDisposer = installStreamGate(ctx, this.coordinator, this.plane, this.gateConfig)
     this.applySettings()
     // The settings package's installSettingsSection helper was folded into
@@ -152,7 +152,7 @@ export class LlmSchedulerService extends TypertRemoteService {
       })
     })
     ctx.on('llm/adapters-updated', () => { this.applySettings() })
-    ctx.effect(() => async () => {
+    ctx.effect(() => () => {
       if (this.debounceTimer !== undefined) clearTimeout(this.debounceTimer)
       this.debounceTimer = undefined
       unsubscribe()
@@ -222,7 +222,7 @@ export class LlmSchedulerService extends TypertRemoteService {
     }
     if (this.debounceTimer !== undefined) clearTimeout(this.debounceTimer)
     this.debounceTimer = setTimeout(emit, delay)
-    this.debounceTimer.unref?.()
+    this.debounceTimer.unref()
   }
 }
 
