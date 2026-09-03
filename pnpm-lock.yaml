@@ -1232,9 +1232,6 @@ importers:
       '@deepseek-ai/dsh-tool-jobs':
         specifier: workspace:^
         version: link:../../jobs/tool-jobs
-      '@deepseek-ai/dsh-tool-ps':
-        specifier: workspace:^
-        version: link:../../integrations/tool-ps
       '@deepseek-ai/dsh-tool-pwsh':
         specifier: workspace:^
         version: link:../../shell/tool-pwsh
@@ -1259,9 +1256,6 @@ importers:
       '@deepseek-ai/dsh-tool-web':
         specifier: workspace:^
         version: link:../../web/tool-web
-      '@deepseek-ai/dsh-tool-wk':
-        specifier: workspace:^
-        version: link:../../integrations/tool-wk
       '@deepseek-ai/dsh-tool-workflow':
         specifier: workspace:^
         version: link:../../workflow/tool-workflow
@@ -5876,56 +5870,6 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
-
-  packages/integrations/tool-ps:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
-        version: link:../../util/launch-environment
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-timeout':
-        specifier: workspace:^
-        version: link:../../util/timeout
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
-
-  packages/integrations/tool-wk:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
-        version: link:../../util/launch-environment
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-timeout':
-        specifier: workspace:^
-        version: link:../../util/timeout
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
 
   packages/interaction/commands:
     dependencies:

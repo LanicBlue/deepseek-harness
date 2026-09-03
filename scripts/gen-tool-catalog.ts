@@ -58,8 +58,6 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import * as ToolPs from '@deepseek-ai/dsh-tool-ps'
-import * as ToolWk from '@deepseek-ai/dsh-tool-wk'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
@@ -508,30 +506,6 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
-  },
-  {
-    pkg: '@deepseek-ai/dsh-tool-wk',
-    dir: 'tool-wk',
-    source: 'packages/integrations/tool-wk/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'a running local Wiki Server (WK)'],
-    writes: ['tool/call', 'tool/result'],
-    async mount(ctx) {
-      await ctx.plugin(ToolWk)
-    },
-    note:
-      'Read-only projection of the local Wiki Server: full-text wiki search, node reads, the root directory, and indexed project-tree source search/read. Endpoint and Bearer key resolve per call from config, env, or WK\'s consumer credential file, so a restarted WK (rotated dynamic port) heals without a remount.',
-  },
-  {
-    pkg: '@deepseek-ai/dsh-tool-ps',
-    dir: 'tool-ps',
-    source: 'packages/integrations/tool-ps/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'a running local Project Service (PS)'],
-    writes: ['tool/call', 'tool/result'],
-    async mount(ctx) {
-      await ctx.plugin(ToolPs)
-    },
-    note:
-      'Read-only projection of the local Project Service: the project directory, per-project detail, missions, and the attention inbox. Row payloads ride verbatim as JSON strings — PS owns the shapes, the tools never guess fields beyond identity columns.',
   },
   {
     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',

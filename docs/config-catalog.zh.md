@@ -2820,28 +2820,6 @@ export interface Config {
 
 来源：[`packages/lsp/tool-lsp/src/index.ts:57`](../packages/lsp/tool-lsp/src/index.ts)
 
-<a id="deepseek-aidsh-tool-ps"></a>
-
-## `@deepseek-ai/dsh-tool-ps`
-
-需要：`tools` · `systemPrompt`
-
-```ts config-catalog
-/** Plugin config — every field optional; `apply` fills env and file defaults. */
-export interface Config {
-  /** PS base URL. Defaults to `$PS_BASE_URL`, then the credential file, then `http://127.0.0.1:7600`. */
-  baseUrl?: string
-  /** Explicit Bearer key override; falls back to the credential file, then `$DSH_PS_API_KEY`. */
-  apiKey?: string
-  /** Consumer credential file (`{clientKey, baseUrl}`). Defaults to `~/.project-service/config/dsh.json`; optional. */
-  credentialFile?: string
-  /** Per-request timeout. Defaults to 10,000 ms. */
-  timeoutMs?: number
-}
-```
-
-来源：[`packages/integrations/tool-ps/src/index.ts:37`](../packages/integrations/tool-ps/src/index.ts)
-
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -3091,30 +3069,6 @@ export interface Config {
 ```
 
 来源：[`packages/web/tool-web/src/index.ts:37`](../packages/web/tool-web/src/index.ts)
-
-<a id="deepseek-aidsh-tool-wk"></a>
-
-## `@deepseek-ai/dsh-tool-wk`
-
-需要：`tools` · `systemPrompt`
-
-```ts config-catalog
-/** Plugin config — every field optional; `apply` fills env and file defaults. */
-export interface Config {
-  /** WK data root holding `config/`. Defaults to `~/.wiki-service`, then `$WIKI_SERVER_DATA_ROOT`. */
-  dataRoot?: string
-  /** Consumer credential file (`{clientKey, baseUrl}`). Defaults to `<dataRoot>/config/dsh.json`. */
-  credentialFile?: string
-  /** Explicit base URL override; skips credential-file discovery for the address. */
-  baseUrl?: string
-  /** Explicit Bearer key override; falls back to the credential file, then `$DSH_WK_API_KEY`. */
-  apiKey?: string
-  /** Per-request timeout. Defaults to 10,000 ms. */
-  timeoutMs?: number
-}
-```
-
-来源：[`packages/integrations/tool-wk/src/index.ts:44`](../packages/integrations/tool-wk/src/index.ts)
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 

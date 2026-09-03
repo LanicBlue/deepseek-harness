@@ -295,8 +295,6 @@
     { "path": "./packages/jobs/jobs" },
     { "path": "./packages/jobs/jobs-local" },
     { "path": "./packages/jobs/tool-jobs" },
-    { "path": "./packages/integrations/tool-wk" },
-    { "path": "./packages/integrations/tool-ps" },
     { "path": "./packages/experimental/agent-team" },
     { "path": "./packages/experimental/agent-team-profile" },
     { "path": "./packages/experimental/tool-agent-team" },
