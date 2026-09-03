@@ -85,6 +85,15 @@ describe('reading display metadata', () => {
     // shipped one; identity comes from the directory and the root it sits in.
     expect(await readPresetMetadata(dir)).toEqual({ name: 'mine' })
   })
+
+  it('reads the InfiniteMission opt-in only as an explicit true', async () => {
+    expect(await readPresetMetadata(await presetDir('im: true\n'))).toEqual({ im: true })
+    // Not a boolean, not true, absent — every other shape leaves the preset
+    // unbridged, exactly like unreadable display text.
+    expect(await readPresetMetadata(await presetDir('im: false\n'))).toEqual({})
+    expect(await readPresetMetadata(await presetDir('im: yes\n'))).toEqual({})
+    expect(await readPresetMetadata(await presetDir('name: mine\n'))).toEqual({ name: 'mine' })
+  })
 })
 
 describe('rendering display metadata', () => {
@@ -103,6 +112,12 @@ describe('rendering display metadata', () => {
     expect(renderPresetMetadata({ name: '极简模式' })).toBe('name: 极简模式\n')
     // Description without a name is legal too: the picker falls back to the id.
     expect(renderPresetMetadata({ description: '只做检索。' })).toBe('description: 只做检索。\n')
+  })
+
+  it('stores the InfiniteMission opt-in beside the display text', () => {
+    expect(renderPresetMetadata({ im: true })).toBe('im: true\n')
+    expect(renderPresetMetadata({ name: '标准模式', im: true })).toBe('name: 标准模式\nim: true\n')
+    expect(renderPresetMetadata({ im: false })).toBeUndefined()
   })
 
   it('renders nothing when there is nothing to store', () => {

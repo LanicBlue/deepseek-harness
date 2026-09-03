@@ -1,0 +1,9 @@
+# The dsh-im-bridge bundle patch: when a profile adds this package as a
+# plugin, the bridge service starts, reads its workspaces from the
+# `im-bridge` settings namespace, and owns one `im receive` loop per
+# (workspace, IM-enabled preset) member. Everything else — preset discovery,
+# the agent registry, the session store — comes from the profile's own base.
+
+- insert:
+    - id: im-bridge
+      name: '@deepseek-ai/dsh-im-bridge'

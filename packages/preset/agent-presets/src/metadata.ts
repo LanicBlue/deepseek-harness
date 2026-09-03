@@ -36,6 +36,14 @@ export interface PresetMetadata {
    * can read in capability order while authored ones stay alphabetical.
    */
   readonly order?: number
+  /**
+   * Opt the preset into the InfiniteMission bridge: the bridge joins one
+   * `dsh-<preset>` member per configured IM workspace and routes that
+   * member's mission arrivals into a Session composed from this preset.
+   * Display text stays optional exactly like the rest — a broken or absent
+   * flag never blocks mounting, it just leaves the preset unbridged.
+   */
+  readonly im?: boolean
 }
 
 /** A non-empty trimmed string, or undefined for anything else. */
@@ -77,10 +85,12 @@ export async function readPresetMetadata(directory: string): Promise<PresetMetad
   const order = typeof record.order === 'number' && Number.isFinite(record.order)
     ? record.order
     : undefined
+  const im = record.im === true
   return {
     ...name === undefined ? {} : { name },
     ...description === undefined ? {} : { description },
     ...order === undefined ? {} : { order },
+    ...im ? { im: true } : {},
   }
 }
 
@@ -96,10 +106,13 @@ export function renderPresetMetadata(metadata: PresetMetadata): string | undefin
   const name = text(metadata.name)
   const description = text(metadata.description)
   const { order } = metadata
-  if (name === undefined && description === undefined && order === undefined) return undefined
+  if (name === undefined && description === undefined && order === undefined && metadata.im !== true) {
+    return undefined
+  }
   return yaml.dump({
     ...name === undefined ? {} : { name },
     ...description === undefined ? {} : { description },
     ...order === undefined ? {} : { order },
+    ...metadata.im === true ? { im: true } : {},
   }, { lineWidth: -1 })
 }

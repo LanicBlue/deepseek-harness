@@ -19,6 +19,8 @@ export interface AgentPresetRow {
   readonly name?: string
   /** One sentence on what this preset is for. */
   readonly description?: string
+  /** The preset opted into the InfiniteMission bridge (`im: true`). */
+  readonly im?: boolean
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string
 }

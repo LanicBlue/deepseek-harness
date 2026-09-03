@@ -32,6 +32,13 @@ export interface AgentPreset {
   /** Declared position within its group; absent sorts after those that declare one. */
   readonly order?: number
   /**
+   * The preset opted into the InfiniteMission bridge (`im: true` in its
+   * `preset.yml`); the bridge package reads this flag from {@link list} and
+   * joins one `dsh-<preset>` member per configured IM workspace for each
+   * preset that sets it.
+   */
+  readonly im?: boolean
+  /**
    * Why this preset cannot compose a session, absent when it can. A broken
    * preset stays on the roster — hiding it would leave its directory blocking
    * the id with nothing to see or delete — but every mounting path refuses it

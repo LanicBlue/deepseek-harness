@@ -157,7 +157,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-Source: [`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+Source: [`packages/preset/agent-presets/src/preset.ts:59`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -900,6 +900,43 @@ export interface Config {
 
 Source: [`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
 
+<a id="deepseek-aidsh-im-bridge"></a>
+
+## `@deepseek-ai/dsh-im-bridge`
+
+Requires: `agents` · `agentPresets` · `sessions` · `settings` · `systemPrompt` · `workspaceRegistry`
+
+```ts config-catalog
+/** Plugin config: how the bridge reaches `im` and paces its loops. */
+export interface Config {
+  /**
+   * Executable or path used to run the `im` CLI. Every IM command runs with
+   * the workspace as its cwd; this field only names the binary.
+   */
+  imBin: string
+  /**
+   * Member id prefix: preset `plan` becomes the member `dsh-plan`. Im ids are
+   * self-reported, so the prefix is what keeps bridge-owned members readable
+   * apart from human-joined ones.
+   */
+  memberPrefix: string
+  /**
+   * `--timeout` passed to each `im receive --wait` cycle. One child per
+   * (workspace, member) runs for this long, exits 0, and is re-hung — the
+   * cycle length trades process churn against lock-release latency.
+   */
+  receiveTimeoutSec: number
+  /**
+   * Reconcile cadence: how often the bridge re-reads the preset roster for
+   * the `im` flag. Settings changes reconcile immediately; preset-directory
+   * edits have no watcher, so this interval is their path into the bridge.
+   */
+  rescanSec: number
+}
+```
+
+Source: [`packages/integrations/dsh-im-bridge/src/index.ts:32`](../packages/integrations/dsh-im-bridge/src/index.ts)
+
 <a id="deepseek-aidsh-invariants"></a>
 
 ## `@deepseek-ai/dsh-invariants`
@@ -1411,7 +1448,7 @@ export interface SchedulerLaneEntry {
 }
 ```
 
-Source: [`packages/llm/llm-scheduler/src/settings.ts:36`](../packages/llm/llm-scheduler/src/settings.ts)
+Source: [`packages/llm/llm-scheduler/src/settings.ts:35`](../packages/llm/llm-scheduler/src/settings.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
@@ -2554,7 +2591,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:239`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
