@@ -36,8 +36,10 @@ export interface TimeoutNote {
 /** One parsed line of receive output. */
 export type ImNote = ArrivalNote | MissionEndedNote | MembershipEndNote | TimeoutNote
 
-/** `[station <key>] [ms_…] <from> → <to> (round: <outcome>)` and its peers. */
-const ARRIVAL = /^\[station (?<station>\S+)\] \[(?<missionId>ms_\S+)\] \S+ → \S+ \(round: .+\)$/
+/** `[station <key>] [ms_…] …`: a hop arrival (`from → to (round: …)`) or a
+ * first-park arrival (`<mission name>` — the shape a mission prints when it
+ * is created at its entry station, before any round exists). */
+const ARRIVAL = /^\[station (?<station>\S+)\] \[(?<missionId>ms_\S+)\] .+$/
 /** `[from workspace] [ms_…] mission ended: <disposition> (<outcome>)`. */
 const MISSION_ENDED = /^\[from workspace\] \[(?<missionId>ms_\S+)\] mission ended: .+$/
 /** The membership-end farewell the CLI prints before exiting its loop. */

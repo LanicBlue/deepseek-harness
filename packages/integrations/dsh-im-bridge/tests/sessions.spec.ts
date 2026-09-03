@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { bridgeSessionId, deliverBrief } from '../src/sessions.ts'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { bridgeSessionId, deliverBrief, installModelFallback } from '../src/sessions.ts'
 
 let context: Context | undefined
 
@@ -26,19 +28,17 @@ interface StubRuntime {
   readonly created: ReturnType<typeof vi.fn>
   readonly resumed: ReturnType<typeof vi.fn>
   readonly mounted: ReturnType<typeof vi.fn>
-  readonly sections: ReturnType<typeof vi.fn>
   readonly attached: ReturnType<typeof vi.fn>
   readonly workspacePath: string
 }
 
-async function stubRuntime(liveAgent: boolean): Promise<StubRuntime> {
+async function stubRuntime(liveAgent: boolean, persistedOnDisk = false): Promise<StubRuntime> {
   const ctx = new Context()
   context = ctx
   const followup = vi.fn()
   const created = vi.fn()
   const resumed = vi.fn()
   const mounted = vi.fn()
-  const sections = vi.fn()
   const attached = vi.fn()
   const workspacePath = await tempWorkspace()
   const fakeAgent = { followup } as unknown as Agent
@@ -49,11 +49,23 @@ async function stubRuntime(liveAgent: boolean): Promise<StubRuntime> {
     resume: resumed,
   } as never)
   ctx.provide('agentPresets', { mount: mounted } as never)
-  ctx.provide('systemPrompt', { section: sections } as never)
+  ctx.provide('agentDefaultModel', {
+    currentSelection: () => ({ provider: 'stub-provider', model: 'stub-model' }),
+  } as never)
   ctx.provide('workspaceRegistry', {
     create: async (path: string) => ({ path, attachSession: attached }),
   } as never)
-  return { ctx, followup, created, resumed, mounted, sections, attached, workspacePath }
+  // The persisted probe reads persistence through sessionQuery, not the
+  // in-memory store: resolvable observation = on disk, NOT_FOUND = absent.
+  ctx.provide('sessionQuery', {
+    observeSession: async (id: SessionId) => {
+      if (!persistedOnDisk) {
+        throw new SessionQueryError(`session "${id}" not found`, 'SESSION_QUERY_SESSION_NOT_FOUND')
+      }
+      return { [Symbol.dispose]: () => {} }
+    },
+  } as never)
+  return { ctx, followup, created, resumed, mounted, attached, workspacePath }
 }
 
 describe('deliverBrief', () => {
@@ -95,12 +107,10 @@ describe('deliverBrief', () => {
     expect(options.sessionId).toBe(sessionId)
     expect(options.meta.cwd).toBe(runtime.workspacePath)
     expect(options.meta.agentPreset).toBe('plan')
-    // setup composes the agent: the preset mount plus the duty prompt section.
+    // setup composes the agent: the preset mount plus the model fallback.
     const agentCtx = new Context()
-    agentCtx.provide('systemPrompt', { section: runtime.sections } as never)
     await options.setup(agentCtx)
     expect(runtime.mounted).toHaveBeenCalledWith(agentCtx, 'plan')
-    expect(runtime.sections).toHaveBeenCalledTimes(1)
 
     expect(runtime.attached).toHaveBeenCalledWith(sessionId)
     expect(runtime.followup).toHaveBeenCalledTimes(1)
@@ -108,16 +118,19 @@ describe('deliverBrief', () => {
       content: readonly { type: string; text: string }[]
       source: { kind: string; workspace: string; missionId: string }
     }
-    expect(message.content[0]!.text).toBe('[mission ms_x] rendered charter')
+    expect(message.content[0]!.text).toContain('[IM bridge duty')
+    expect(message.content[0]!.text).toContain('im mission submit')
+    expect(message.content[0]!.text.endsWith('[mission ms_x] rendered charter')).toBe(true)
     expect(message.source.kind).toBe('im-bridge')
     expect(message.source.workspace).toBe(runtime.workspacePath)
     expect(message.source.missionId).toBe('ms_x')
   })
 
   it('adopts a persisted-but-not-live session through agents.resume', async () => {
-    const runtime = await stubRuntime(false)
+    // Persistence — not the live store — decides the path: an empty
+    // in-memory store with the session on disk still resumes.
+    const runtime = await stubRuntime(false, true)
     const sessionId = bridgeSessionId(runtime.workspacePath, 'plan')
-    runtime.ctx.sessions.create(sessionId, { meta: { cwd: runtime.workspacePath } })
     runtime.resumed.mockResolvedValue({ agent: { followup: runtime.followup }, dispose: async () => {} })
     await deliverBrief(runtime.ctx, {
       workspacePath: runtime.workspacePath,
@@ -152,5 +165,49 @@ describe('shared-store visibility', () => {
     const sessionId = bridgeSessionId(cwd, 'plan')
     ctx.sessions.create(sessionId, { meta: { cwd } })
     expect(ctx.sessions.list().map(session => session.id)).toContain(sessionId)
+  })
+})
+
+describe('installModelFallback', () => {
+  /** Capture the agent/request listener a fresh scoped context registered. */
+  async function capturedListener(
+    header: {
+      config: { provider: string; model: string; reasoningEffort?: string }
+      adapterDefaults?: { reasoningEffort?: boolean }
+    } | undefined,
+  ): Promise<(payload: unknown, next: () => Promise<unknown>) => Promise<unknown>> {
+    const ctx = new Context()
+    context = ctx
+    Object.assign(ctx, { agent: { session: { requestHeader: () => header } } } as never)
+    const calls: Array<[string, (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>]> = []
+    const original = ctx.on.bind(ctx)
+    vi.spyOn(ctx, 'on').mockImplementation(((name: string, listener: never) => {
+      if (name === 'agent/request') calls.push([name, listener as never])
+      return original(name as never, listener)
+    }) as never)
+    installModelFallback(ctx as never, { provider: 'default-p', model: 'default-m', reasoningEffort: ReasoningEffortId('high') })
+    expect(calls).toHaveLength(1)
+    return calls[0]![1]
+  }
+
+  it('fills an empty seed with the default model selection', async () => {
+    const listener = await capturedListener(undefined)
+    const filled = await listener({}, async () => ({ provider: '', model: '' }))
+    expect(filled).toEqual({ provider: 'default-p', model: 'default-m', reasoningEffort: 'high' })
+  })
+
+  it('passes through a config another listener already resolved', async () => {
+    const listener = await capturedListener(undefined)
+    const resolved = { provider: 'picked-p', model: 'picked-m', reasoningEffort: 'low' as const }
+    await expect(listener({}, async () => ({ ...resolved }))).resolves.toEqual(resolved)
+  })
+
+  it('restores the logged request header after a restart instead of the default', async () => {
+    const listener = await capturedListener({
+      config: { provider: 'switched-p', model: 'switched-m', reasoningEffort: 'medium' },
+      adapterDefaults: { reasoningEffort: false },
+    })
+    const filled = await listener({}, async () => ({ provider: '', model: '', reasoningEffort: 'high' }))
+    expect(filled).toEqual({ provider: 'switched-p', model: 'switched-m', reasoningEffort: 'medium' })
   })
 })

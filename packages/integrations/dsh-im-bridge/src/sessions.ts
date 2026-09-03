@@ -11,16 +11,20 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-// Type-only: resolves the agentPresets / sessions / workspaceRegistry
-// Context service declarations this module calls.
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
+// Type-only: resolves the agentDefaultModel / agentPresets / sessions /
+// workspaceRegistry Context service declarations this module calls.
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-session'
+import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
+// Type-only: resolves the sessionQuery Context service declaration the
+// persisted-session probe calls.
+import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -36,25 +40,67 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
-/** Prompt-section placement: after the persona, before plan policy. */
-const DUTY_SECTION_ORDER = 300
-/** Scoped section name for the bridge's member-discipline instructions. */
-const DUTY_SECTION = 'im-bridge:duty'
 
-/** The standing instructions every bridged session carries. */
-const DUTY_SECTION_TEXT = [
-  'You are an InfiniteMission member bridged from a DSH agent preset.',
-  'Mission briefs arrive as messages containing the rendered station charter.',
-  'Work each brief inside this workspace with the `im` CLI:',
-  'read and write documents with `im mission doc`, submit rounds with',
-  '`im mission submit` carrying the revision from the brief and a permitted',
-  'outcome, and attach the receipts your documents minted.',
-  'Never run `im join` or `im receive` — the bridge owns your membership and',
+/**
+ * The member-discipline instructions prepended to every delivered brief.
+ *
+ * Carried in the message, not a system-prompt section, because a preset's
+ * persona may mark the assembled prompt complete (`complete: true`) and
+ * silently drop every later section — the smoke run proved exactly that with
+ * the minimal preset. A message preamble reaches the model under any preset.
+ */
+const DUTY_PREAMBLE = [
+  '[IM bridge duty — you are the InfiniteMission member named in the brief.]',
+  'Only the newest brief is current; earlier briefs in your history are',
+  'finished business. Work each brief inside this workspace with the `im` CLI.',
+  'Submitting IS the deliverable: close every round by actually running',
+  '`im mission submit <member> <mission> --revision N --outcome <o>',
+  '--reason <text>` with the revision and a permitted outcome from the brief.',
+  'A turn that ends without that child process has delivered nothing, and',
+  'prose that merely announces an outcome is a false report. Read and write',
+  'documents with `im mission doc` and attach the receipts they minted.',
+  'Never run `im join` or `im receive`: the bridge owns your membership and',
   'listening, and joining again would fork your identity with a suffixed id.',
-  'Never register, wait, or hold stations: your station prompt is the work',
-  'order, and the next brief arrives in this same session when the mission',
-  'moves on.',
-].join(' ')
+  'Never register, wait, or hold stations: the next brief arrives in this',
+  'same session when the mission moves on.',
+].join('\n')
+
+/**
+ * Fill the request waterfall's model config for a bridged agent.
+ *
+ * The raw agent seed carries no provider/model (the bridge passes no
+ * `agentOptions`), so without a filler every turn dies with "has no
+ * provider/model". The filler defers to whoever already resolved a config —
+ * the session controller's selection when the UI drives the turn — and only
+ * fills an empty one: from the session's logged request header first (a model
+ * switched in the UI survives a DSH restart), else the host's default model.
+ * @param agentCtx - the agent's scoped context, fresh from create/resume setup.
+ * @param fallback - default-model selection snapshot taken at (re)spawn time.
+ */
+export function installModelFallback(agentCtx: Context, fallback: ModelSelection): void {
+  agentCtx.on('agent/request', async (_payload, next): Promise<LlmCallConfig> => {
+    const resolved = await next()
+    if (resolved.provider !== '' && resolved.model !== '') return resolved
+    const agent = agentCtx.agent
+    if (agent === undefined) throw new Error('im-bridge: agent setup has no scoped Agent')
+    const logged = agent.session.requestHeader()
+    if (logged === undefined) {
+      const { reasoningEffort: _inherited, ...rest } = resolved
+      return { ...rest, ...fallback }
+    }
+    // An effort the adapter defaulted is not a conversation choice.
+    const { reasoningEffort: _inherited, ...rest } = resolved
+    return {
+      ...rest,
+      provider: logged.config.provider,
+      model: logged.config.model,
+      ...(logged.config.reasoningEffort === undefined
+        || logged.adapterDefaults?.reasoningEffort === true
+        ? {}
+        : { reasoningEffort: logged.config.reasoningEffort }),
+    }
+  })
+}
 
 /**
  * The deterministic session id one (workspace, preset) pair works in.
@@ -72,6 +118,30 @@ export function bridgeSessionId(workspacePath: string, presetId: string): Sessio
     digest = (digest * 31n + BigInt(byte)) & 0xffff_ffff_ffffn
   }
   return brandString<SessionId>(`im-${digest.toString(16)}-${presetId}`)
+}
+
+/**
+ * Whether persistence holds a session with this id.
+ *
+ * The live SessionStore only contains sessions created or restored in this
+ * process, so probing it says nothing across a bridge restart; the
+ * observation reader reads the durable record instead. The lease is
+ * caller-owned, so it is released the moment the header answers the question.
+ * @param ctx - runtime context with `sessionQuery`.
+ * @param sessionId - the deterministic bridge session id.
+ * @returns true when persistence holds the session.
+ */
+async function sessionExistsOnDisk(ctx: Context, sessionId: SessionId): Promise<boolean> {
+  try {
+    const observation = await ctx.sessionQuery.observeSession(sessionId)
+    observation[Symbol.dispose]?.()
+    return true
+  } catch (error: unknown) {
+    if (error instanceof SessionQueryError && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
+      return false
+    }
+    throw error
+  }
 }
 
 /**
@@ -112,13 +182,9 @@ export async function deliverBrief(
   } else {
     const compose = async (agentCtx: Context): Promise<void> => {
       await ctx.agentPresets.mount(agentCtx, presetId)
-      agentCtx.systemPrompt.section({
-        name: DUTY_SECTION,
-        order: DUTY_SECTION_ORDER,
-        text: DUTY_SECTION_TEXT,
-      })
+      installModelFallback(agentCtx, ctx.agentDefaultModel.currentSelection())
     }
-    const persisted = ctx.sessions.get(sessionId) !== undefined
+    const persisted = await sessionExistsOnDisk(ctx, sessionId)
     if (persisted) {
       agent = (await ctx.agents.resume({
         resumeSessionId: sessionId,
@@ -149,7 +215,7 @@ export async function deliverBrief(
     }
   }
   agent.followup(createUserMessage({
-    content: [{ type: 'text', text: opening }],
+    content: [{ type: 'text', text: `${DUTY_PREAMBLE}\n\n${opening}` }],
     source: { kind: 'im-bridge', workspace: workspacePath, missionId },
   }))
   return agent

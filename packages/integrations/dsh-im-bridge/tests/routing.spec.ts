@@ -15,6 +15,14 @@ describe('parseReceiveStdout', () => {
     ])
   })
 
+  it('parses a first-park arrival (mission name, no round hop)', () => {
+    expect(parseReceiveStdout(
+      '[station probe] [ms_8123c88ecf4a399d1fe6dc2b7e61ea10] Bridge smoke',
+    )).toEqual([
+      { kind: 'arrival', station: 'probe', missionId: 'ms_8123c88ecf4a399d1fe6dc2b7e61ea10' },
+    ])
+  })
+
   it('parses the membership-end farewell, mission-ended notices, and the idle line', () => {
     expect(parseReceiveStdout(
       '[membership] you are no longer an active member (removed or archived) — stopping the listener.',

@@ -12,7 +12,9 @@ import z from '@deepseek-ai/schemastery'
 // Type-only: each import resolves the Context service declaration the static
 // inject list names, so this package type-checks without runtime imports.
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -26,7 +28,7 @@ import { bridgeSessionId, deliverBrief } from './sessions.ts'
 /** Cordis plugin name. */
 export const name = 'im-bridge'
 /** Services the bridge composes over; the Loader waits for their providers. */
-export const inject = ['agents', 'agentPresets', 'sessions', 'settings', 'systemPrompt', 'workspaceRegistry']
+export const inject = ['agents', 'agentDefaultModel', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
 
 /** Plugin config: how the bridge reaches `im` and paces its loops. */
 export interface Config {
@@ -78,7 +80,7 @@ interface LoopEntry {
 
 /** The InfiniteMission bridge service (`ctx.imBridge`). */
 export class ImBridge extends Service {
-  static inject = ['agents', 'agentPresets', 'sessions', 'settings', 'systemPrompt', 'workspaceRegistry']
+  static inject = ['agents', 'agentDefaultModel', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
 
   private readonly selfCtx: Context
   private readonly runner: ImRunner
@@ -225,7 +227,7 @@ export class ImBridge extends Service {
     const key = this.loopKey(workspace, presetId)
     const sessionId = bridgeSessionId(workspace, presetId)
     const deliverable = (candidate: string): boolean =>
-      this.selfCtx.agents.get(sessionId) !== undefined || this.selfCtx.sessions.get(sessionId) !== undefined
+      (this.selfCtx.agents.get(sessionId) !== undefined || this.selfCtx.sessions.get(sessionId) !== undefined)
       && candidate === sessionId
     for (;;) {
       if (signal.aborted) return
@@ -246,13 +248,22 @@ export class ImBridge extends Service {
           continue
         }
         const target = decision.action === 'inject' ? decision.sessionId : sessionId
-        await deliverBrief(this.selfCtx, {
-          workspacePath: workspace,
-          presetId,
-          sessionId: bridgeSessionId(workspace, presetId),
-          missionId: decision.missionId,
-          opening,
-        })
+        try {
+          await deliverBrief(this.selfCtx, {
+            workspacePath: workspace,
+            presetId,
+            sessionId: bridgeSessionId(workspace, presetId),
+            missionId: decision.missionId,
+            opening,
+          })
+        } catch (error: unknown) {
+          // The note was consumed exactly-once, so this mission's next
+          // movement re-notifies; the loop must survive to hear it.
+          this.selfCtx.logger.error(
+            `im-bridge: delivering ${decision.missionId} to ${target} failed: ${String(error)}`,
+          )
+          continue
+        }
         this.bindings.set(key, target)
       }
     }
@@ -274,6 +285,8 @@ export class ImBridge extends Service {
     await this.reconcileQueued
   }
 }
+
+
 
 /** Start the bridge Service with the validated config. */
 export function apply(ctx: Context, config: Config): void {

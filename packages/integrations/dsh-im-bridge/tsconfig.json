@@ -18,7 +18,13 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../core/agent-default-model"
+    },
+    {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../session-query/session-query"
     },
     {
       "path": "../../core/system-prompt"
