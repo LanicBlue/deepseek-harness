@@ -23,7 +23,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type {} from 'zod'
 import { Coordinator } from './coordinator.ts'
 import { Plane } from './plane.ts'
@@ -42,6 +41,13 @@ import type {
   LaneKey,
   SchedulerStatus,
 } from './types.ts'
+import type {} from '@deepseek-ai/dsh-settings'
+
+/** Whether the consumer's own fiber is tearing down (not just losing the settings service). */
+function isFiberUnloading(ctx: Context): boolean {
+  const state: number = ctx.fiber.state
+  return state === 5 || state === 4
+}
 
 export { Plane } from './plane.ts'
 export { Coordinator } from './coordinator.ts'
@@ -129,9 +135,21 @@ export class LlmSchedulerService extends TypertRemoteService {
     const unsubscribe = this.plane.onStatusChange(status => this.notify(status))
     this.streamGateDisposer = installStreamGate(ctx, this.coordinator, this.plane, this.gateConfig)
     this.applySettings()
-    installSettingsSection(ctx, SCHEDULER_SETTINGS_NAMESPACE, Config, resolved, {
-      setSource: (current) => { this.source = current },
-      onChange: () => { this.applySettings() },
+    // The settings package's installSettingsSection helper was folded into
+    // service APIs upstream; this is the same wiring over the public scope.
+    ctx.inject(['settings'], (sctx) => {
+      const scope = sctx.settings.register(SCHEDULER_SETTINGS_NAMESPACE, Config, { base: resolved })
+      this.source = () => scope.get()
+      sctx.effect(() => () => {
+        if (isFiberUnloading(ctx)) return
+        this.source = () => resolved
+        this.applySettings()
+      })
+      this.applySettings()
+      scope.watch(() => {
+        if (isFiberUnloading(ctx)) return
+        this.applySettings()
+      })
     })
     ctx.on('llm/adapters-updated', () => { this.applySettings() })
     ctx.effect(() => async () => {

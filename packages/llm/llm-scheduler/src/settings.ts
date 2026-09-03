@@ -8,12 +8,11 @@
  */
 
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { LaneConfig, PriorityByPurpose } from './types.ts'
 import { Priority } from './types.ts'
 
 /** Settings namespace registered by the llm-scheduler plugin. */
-export const SCHEDULER_SETTINGS_NAMESPACE = settingsNamespace('llm-scheduler')
+export const SCHEDULER_SETTINGS_NAMESPACE = 'llm-scheduler'
 
 /** Scheduling priority classes, in admission order. */
 export type PriorityClass = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'

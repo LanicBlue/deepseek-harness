@@ -4007,6 +4007,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FailureDecision',
     declaration: 'export type FailureDecision = {\n    readonly kind: \'fail_call\';\n    readonly category: FailureCategory;\n} | {\n    readonly kind: \'open_circuit\';\n    readonly category: FailureCategory;\n    readonly cooldownMs: number;\n} | {\n    readonly kind: \'block_until_time\';\n    readonly category: FailureCategory;\n    readonly untilMs: number;\n} | {\n    readonly kind: \'block_config\';\n    readonly category: FailureCategory;\n} | {\n    readonly kind: \'retarget\';\n    readonly category: FailureCategory;\n    readonly to: LaneKey;\n    readonly openCircuitMs?: number;\n};',
+  },
+  {
     name: 'FiberState',
     declaration: 'export type FiberState = FiberStateEnum;',
   },
