@@ -18,6 +18,10 @@ import {
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
+import {
+  parseCompositionForm, parseMetadataForm, parseConfigSnippet, renderConfigSnippet,
+  type CompositionForm, type MetadataForm, type ModelSelectionFields, type RowFields,
+} from './preset-forms.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetSection.module.css'
 
@@ -43,6 +47,14 @@ export interface AgentPresetSectionInjected {
   setEditComposition: (composition: string) => void
   /** Save the drafts, then converge the page on the stored result. */
   saveEdit: () => Promise<void>
+  /** Switch the editor between the form and the raw text. */
+  setEditMode: (mode: 'form' | 'yaml') => void
+  /** Patch the metadata form fields (form mode only); undefined clears. */
+  patchMetadataForm: (patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }) => void
+  /** Patch the composition form fields (form mode only). */
+  patchCompositionForm: (patch: Partial<CompositionForm>) => void
+  /** Registered provider routes for the model selects. */
+  modelProviders: () => Promise<readonly { id: string; name: string }[]>
   /** Open the copy dialog over one preset. */
   beginCopy: (from: string) => void
   /** Close the copy dialog, discarding the draft. */
@@ -180,6 +192,261 @@ function CardDescription({ text }: { text: string }): ReactNode {
   )
 }
 
+/** Props the two form-field groups share. */
+interface FormFieldsProps {
+  t: (key: AgentPresetSettingsKey) => string
+  readOnly: boolean
+  /** Form patches; an explicit undefined clears the field. */
+  patchMetadata?: (patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }) => void
+  patchComposition?: (patch: Partial<CompositionForm>) => void
+}
+
+/** One provider/model/effort triple as three inline inputs. */
+function ModelSelectionInput({ value, onChange, disabled, t, providers }: {
+  value: ModelSelectionFields
+  onChange: (next: ModelSelectionFields) => void
+  disabled: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  providers: readonly { id: string; name: string }[]
+}): ReactNode {
+  return (
+    <span className={css.modelRow}>
+      <select
+        className={css.input}
+        value={providers.some(p => p.id === value.provider) ? value.provider : ''}
+        disabled={disabled}
+        aria-label={t('providerLabel')}
+        onChange={(event) => { onChange({ ...value, provider: event.target.value === '' ? value.provider : event.target.value }) }}
+      >
+        <option value="">{value.provider === '' ? t('providerLabel') : value.provider}</option>
+        {providers.map(provider => (
+          <option key={provider.id} value={provider.id}>{provider.id}</option>
+        ))}
+      </select>
+      <input
+        className={css.input}
+        value={value.model}
+        disabled={disabled}
+        spellCheck={false}
+        placeholder={t('modelLabel')}
+        aria-label={t('modelLabel')}
+        onChange={(event) => { onChange({ ...value, model: event.target.value }) }}
+      />
+      <input
+        className={css.input}
+        value={value.reasoningEffort ?? ''}
+        disabled={disabled}
+        spellCheck={false}
+        placeholder={`${t('effortLabel')} (low/medium/high)`}
+        aria-label={t('effortLabel')}
+        onChange={(event) => {
+          onChange(event.target.value === ''
+            ? { provider: value.provider, model: value.model }
+            : { ...value, reasoningEffort: event.target.value })
+        }}
+      />
+    </span>
+  )
+}
+
+/** The preset.yml fields: display text, the IM opt-in, and the model chain. */
+function MetadataFormFields({ t, readOnly, patchMetadata, providers, value }: FormFieldsProps & {
+  providers: readonly { id: string; name: string }[]
+  value: MetadataForm
+}): ReactNode {
+  const metadata = value
+  const set = (patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }): void => {
+    patchMetadata?.(patch)
+  }
+  const fallbacks = metadata.modelFallbacks ?? []
+  return (
+    <div className={css.formGrid}>
+      <label className={css.field}>
+        <span className={css.fieldLabel}>{t('fieldName')}</span>
+        <input className={css.input} value={metadata.name ?? ''} readOnly={readOnly} spellCheck={false}
+          onChange={(event) => { set({ name: event.target.value }) }} />
+      </label>
+      <label className={css.field}>
+        <span className={css.fieldLabel}>{t('fieldDescription')}</span>
+        <input className={css.input} value={metadata.description ?? ''} readOnly={readOnly} spellCheck={false}
+          onChange={(event) => { set({ description: event.target.value }) }} />
+      </label>
+      <div className={css.formRow}>
+        <label className={css.field}>
+          <span className={css.fieldLabel}>{t('fieldOrder')}</span>
+          <input className={css.input} type="number" value={metadata.order ?? ''} readOnly={readOnly}
+            onChange={(event) => {
+              const raw = event.target.value
+              set({ order: raw === '' ? undefined : Number(raw) })
+            }} />
+        </label>
+        <label className={css.checkField}>
+          <input type="checkbox" checked={metadata.im === true} disabled={readOnly}
+            onChange={(event) => { set({ im: event.target.checked }) }} />
+          {t('fieldIm')}
+        </label>
+      </div>
+      <div className={css.field}>
+        <span className={css.fieldLabel}>{t('modelDefault')}</span>
+        {metadata.model === undefined
+          ? (readOnly
+            ? <p className={css.hint}>{t('modelUnset')}</p>
+            : (
+              <button type="button" className={css.secondaryButton}
+                onClick={() => { set({ model: { provider: '', model: '' } }) }}>
+                {t('modelAdd')}
+              </button>
+            ))
+          : (
+            <span className={css.formRow}>
+              <ModelSelectionInput value={metadata.model} disabled={readOnly} t={t} providers={providers}
+                onChange={(next) => { set({ model: next.provider === '' && next.model === '' ? undefined : next }) }} />
+              {!readOnly ? (
+                <button type="button" className={css.iconButton} data-tip={t('modelRemove')}
+                  aria-label={t('modelRemove')}
+                  onClick={() => { set({ model: undefined }) }}>✕</button>
+              ) : null}
+            </span>
+          )}
+      </div>
+      {fallbacks.length > 0 || !readOnly ? (
+        <div className={css.field}>
+          <span className={css.fieldLabel}>{t('modelFallbacks')}</span>
+          {fallbacks.map((fallback, index) => (
+            <span key={index} className={css.formRow}>
+              <ModelSelectionInput value={fallback} disabled={readOnly} t={t} providers={providers}
+                onChange={(next) => {
+                  const nextFallbacks = [...fallbacks]
+                  nextFallbacks[index] = next
+                  set({ modelFallbacks: nextFallbacks })
+                }} />
+              {!readOnly ? (
+                <button type="button" className={css.iconButton} data-tip={t('fallbackRemove')}
+                  aria-label={`${t('fallbackRemove')} ${index + 1}`}
+                  onClick={() => { set({ modelFallbacks: fallbacks.filter((_, i) => i !== index) }) }}>✕</button>
+              ) : null}
+            </span>
+          ))}
+          {!readOnly ? (
+            <button type="button" className={css.secondaryButton}
+              onClick={() => { set({ modelFallbacks: [...fallbacks, { provider: '', model: '' }] }) }}>
+              {t('fallbackAdd')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** One composition row's editable line: id, package, config, disabled. */
+function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
+  row: RowFields
+  index: number
+  total: number
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (next: RowFields) => void
+  onRemove: () => void
+  onMove: (delta: number) => void
+}): ReactNode {
+  const [configText, setConfigText] = useState<string | null>(null)
+  const [configError, setConfigError] = useState(false)
+  const commitConfig = (): void => {
+    if (configText === null) return
+    try {
+      const parsed = configText.trim() === '' ? undefined : parseConfigSnippet(configText)
+      onChange({ ...row, config: parsed })
+      setConfigText(null)
+      setConfigError(false)
+    } catch {
+      setConfigError(true)
+    }
+  }
+  const shown = configText ?? (row.config === undefined ? '' : renderConfigSnippet(row.config))
+  return (
+    <div className={css.rowCard}>
+      <div className={css.formRow}>
+        <input className={css.input} value={row.id} readOnly={readOnly} spellCheck={false}
+          placeholder={t('rowId')} aria-label={`${t('rowId')} ${index + 1}`}
+          onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
+        <input className={css.input} value={row.name} readOnly={readOnly} spellCheck={false}
+          placeholder={t('rowName')} aria-label={`${t('rowName')} ${index + 1}`}
+          onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
+        <label className={css.checkField}>
+          <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
+            onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
+          {t('rowDisabled')}
+        </label>
+        {!readOnly ? (
+          <span className={css.rowTools}>
+            <button type="button" className={css.iconButton} disabled={index === 0}
+              aria-label={t('rowUp')} onClick={() => { onMove(-1) }}>↑</button>
+            <button type="button" className={css.iconButton} disabled={index === total - 1}
+              aria-label={t('rowDown')} onClick={() => { onMove(1) }}>↓</button>
+            <button type="button" className={`${css.iconButton} ${css.iconDanger}`} aria-label={t('rowRemove')}
+              onClick={() => { onRemove() }}>✕</button>
+          </span>
+        ) : null}
+      </div>
+      <textarea
+        className={configError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
+        style={{ minHeight: 56 }}
+        value={shown}
+        readOnly={readOnly}
+        spellCheck={false}
+        placeholder={t('rowConfig')}
+        aria-label={`${t('rowConfig')} ${index + 1}`}
+        onChange={(event) => {
+          if (readOnly) return
+          setConfigText(event.target.value)
+          setConfigError(false)
+        }}
+        onBlur={commitConfig}
+      />
+      {configError ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+    </div>
+  )
+}
+
+/** The agent.cordis.yml fields: the plugin-row list. */
+function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFieldsProps & {
+  value: CompositionForm
+}): ReactNode {
+  const rows = value.rows
+  const setRows = (next: RowFields[]): void => { patchComposition?.({ rows: next }) }
+  return (
+    <div className={css.editorFields}>
+      {rows.map((row, index) => (
+        <RowFieldsInput
+          key={index}
+          row={row}
+          index={index}
+          total={rows.length}
+          readOnly={readOnly}
+          t={t}
+          onChange={(next) => { setRows(rows.map((current, i) => i === index ? next : current)) }}
+          onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
+          onMove={(delta) => {
+            const target = index + delta
+            if (target < 0 || target >= rows.length) return
+            const next = [...rows]
+            const [moved] = next.splice(index, 1)
+            if (moved !== undefined) next.splice(target, 0, moved)
+            setRows(next)
+          }}
+        />
+      ))}
+      {!readOnly ? (
+        <button type="button" className={css.secondaryButton}
+          onClick={() => { setRows([...rows, { id: '', name: '' }]) }}>
+          {t('rowAdd')}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Render the Agent presets section content column.
  * @param props - composed slot props.
@@ -194,6 +461,27 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     ? ''
     : viewedRow === undefined ? (state.view?.title ?? state.edit?.id ?? '') : presetDisplayText(viewedRow, t).name
   const [viewerTab, setViewerTab] = useState<'composition' | 'metadata'>('composition')
+  const [providers, setProviders] = useState<readonly { id: string; name: string }[]>([])
+  const editing = state.edit !== null
+  const currentMetadataText = state.edit?.metadata ?? state.view?.metadata ?? ''
+  const currentCompositionText = state.edit?.composition ?? state.view?.content ?? ''
+  const metadataForm = parseMetadataForm(currentMetadataText)
+  const compositionForm = parseCompositionForm(currentCompositionText)
+  // The form switch is offered only when BOTH documents round-trip; a
+  // composition with group rows or a metadata key the form does not know
+  // stays YAML-only rather than silently dropping content on save.
+  const representable = metadataForm !== undefined && compositionForm !== undefined
+  const formMode = !editing || state.edit?.mode === 'form'
+  useEffect(() => {
+    const mode = state.edit?.mode
+    if (!editing || mode !== 'form') return
+    let alive = true
+    void props.modelProviders().then((result) => {
+      if (alive) setProviders(result)
+    }).catch(() => { /* selects fall back to free text */ })
+    return () => { alive = false }
+    // Providers load once per editor session; the texts drive everything else.
+  }, [editing, state.edit?.mode])
 
   useEffect(() => {
     void load()
@@ -437,53 +725,61 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           </>
         )}
       >
-        {state.edit === null
-          ? state.view === null ? null : (
-            <>
-              <div className={css.viewerTabs} role="tablist">
-                {([['composition', 'compositionFile'], ['metadata', 'metadataFile']] as const).map(
-                  ([tab, label]) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      role="tab"
-                      aria-selected={viewerTab === tab}
-                      className={viewerTab === tab ? `${css.viewerTab} ${css.viewerTabActive}` : css.viewerTab}
-                      onClick={() => { setViewerTab(tab) }}
-                    >
-                      {t(label)}
-                    </button>
-                  ),
-                )}
-              </div>
-              <pre className={css.viewerCode}>
-                {viewerTab === 'composition' ? state.view.content : state.view.metadata}
-              </pre>
-            </>
-          )
-          : (
-            <div className={css.editorFields}>
-              <label className={css.editorField}>
-                <span className={css.fieldLabel}>{t('metadataFile')}</span>
-                <textarea
-                  className={css.editorText}
-                  value={state.edit.metadata}
-                  spellCheck={false}
-                  onChange={(event) => { props.setEditMetadata(event.target.value) }}
-                />
-              </label>
-              <label className={css.editorField}>
-                <span className={css.fieldLabel}>{t('compositionFile')}</span>
-                <textarea
-                  className={css.editorText}
-                  value={state.edit.composition}
-                  spellCheck={false}
-                  onChange={(event) => { props.setEditComposition(event.target.value) }}
-                />
-              </label>
-              {state.edit.error === null ? null : <p className={css.error} role="alert">{state.edit.error}</p>}
+        {(state.edit === null ? state.view === null : false) ? null : (
+          <>
+            <div className={css.viewerTabs} role="tablist">
+              {([['composition', 'compositionFile'], ['metadata', 'metadataFile']] as const).map(
+                ([tab, label]) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={viewerTab === tab}
+                    className={viewerTab === tab ? `${css.viewerTab} ${css.viewerTabActive}` : css.viewerTab}
+                    onClick={() => { setViewerTab(tab) }}
+                  >
+                    {t(label)}
+                  </button>
+                ),
+              )}
+              {editing && representable ? (
+                <span className={css.spacer} />
+              ) : null}
+              {representable ? (
+                <button
+                  type="button"
+                  className={css.viewerTab}
+                  aria-pressed={formMode}
+                  onClick={() => { if (editing) props.setEditMode(formMode ? 'yaml' : 'form') }}
+                >
+                  {formMode ? `_yaml_ ${t('modeYaml')}` : `${t('modeForm')}`}
+                </button>
+              ) : editing ? (
+                <span className={css.viewerTab} title={t('formUnavailable')}>{t('modeYaml')}</span>
+              ) : null}
             </div>
-          )}
+            {viewerTab === 'composition'
+              ? (formMode && representable
+                ? compositionForm === undefined ? null : (
+                  <CompositionFormFields
+                    t={t} readOnly={!editing} value={compositionForm}
+                    patchComposition={props.patchCompositionForm}
+                  />
+                )
+                : <pre className={css.viewerCode}>{currentCompositionText}</pre>)
+              : (formMode && representable
+                ? metadataForm === undefined ? null : (
+                  <MetadataFormFields
+                    t={t} readOnly={!editing} value={metadataForm} providers={providers}
+                    patchMetadata={props.patchMetadataForm}
+                  />
+                )
+                : <pre className={css.viewerCode}>{currentMetadataText}</pre>)}
+            {state.edit !== null && state.edit.error === null ? null : state.edit === null ? null : (
+              <p className={css.error} role="alert">{state.edit.error}</p>
+            )}
+          </>
+        )}
       </Modal>
       <Modal
         open={state.pendingDelete !== null}

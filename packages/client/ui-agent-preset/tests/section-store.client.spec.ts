@@ -622,3 +622,70 @@ describe('the browser editor', () => {
     expect(calls.find(call => call.method === 'write')).toBeUndefined()
   })
 })
+
+describe('the form-mode editor', () => {
+  /** Seed with form-representable files: flat rows, full metadata. */
+  function formHarness(): ReturnType<typeof harness> {
+    const h = harness()
+    const preset = h.presets.get('mine')!
+    preset.content = "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n"
+    preset.metadata = 'name: Mine\ndescription: original.\nim: true\n'
+    return h
+  }
+
+  it('opens in form mode when both files round-trip, yaml otherwise', async () => {
+    const { controller } = formHarness()
+    await controller.load()
+    await controller.view('mine')
+
+    controller.beginEdit()
+    expect(controller.store.getSnapshot().edit?.mode).toBe('form')
+
+    // A group row pins the composition to YAML: the editor refuses the form.
+    const grouped = harness()
+    grouped.presets.get('mine')!.content = '- id: g\n  name: cordis:group\n  group: true\n'
+    await grouped.controller.load()
+    await grouped.controller.view('mine')
+    grouped.controller.beginEdit()
+    expect(grouped.controller.store.getSnapshot().edit?.mode).toBe('yaml')
+    grouped.controller.setEditMode('form')
+    expect(grouped.controller.store.getSnapshot().edit?.mode).toBe('yaml')
+  })
+
+  it('serializes form patches back into the draft text', async () => {
+    const { controller } = formHarness()
+    await controller.load()
+    await controller.view('mine')
+    controller.beginEdit()
+
+    controller.patchMetadataForm({ name: 'Renamed', order: 7 })
+    controller.patchMetadataForm({
+      model: { provider: 'minimax-cn', model: 'MiniMax-M3', reasoningEffort: 'low' },
+    })
+    controller.patchMetadataForm({ modelFallbacks: [{ provider: 'zai-coding-cn', model: 'glm-5.3' }] })
+    controller.patchMetadataForm({ model: undefined })
+
+    const metadata = controller.store.getSnapshot().edit?.metadata ?? ''
+    expect(metadata).toContain('name: Renamed')
+    expect(metadata).toContain('order: 7')
+    expect(metadata).toContain('im: true')
+    expect(metadata).toContain('modelFallbacks:')
+    expect(metadata).toContain('zai-coding-cn')
+    expect(metadata).not.toContain('minimax-cn')
+
+    controller.patchCompositionForm({ rows: [{ id: 'two', name: '@deepseek-ai/dsh-tool-bash' }] })
+    expect(controller.store.getSnapshot().edit?.composition)
+      .toContain("id: two\n  name: '@deepseek-ai/dsh-tool-bash'")
+  })
+
+  it('clearing a field through the form removes its key from the text', async () => {
+    const { controller } = formHarness()
+    await controller.load()
+    await controller.view('mine')
+    controller.beginEdit()
+
+    controller.patchMetadataForm({ description: undefined })
+
+    expect(controller.store.getSnapshot().edit?.metadata).not.toContain('description')
+  })
+})

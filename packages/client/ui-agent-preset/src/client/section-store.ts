@@ -19,6 +19,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { beginRosterRead, writeDefaultPreset } from './settings-store.ts'
+import {
+  parseCompositionForm, parseMetadataForm, renderCompositionForm, renderMetadataForm,
+  type CompositionForm, type MetadataForm,
+} from './preset-forms.ts'
 
 /** Ids a preset directory may be named, mirroring the host's own rule. */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -78,14 +82,29 @@ export interface PresetView {
 export interface EditDraft {
   /** The preset being edited. */
   id: string
-  /** Metadata text as typed. */
+  /** Metadata text — the single source of truth both modes edit. */
   metadata: string
-  /** Composition text as typed. */
+  /** Composition text — the single source of truth both modes edit. */
   composition: string
+  /** Whether the form or the raw text is showing. */
+  mode: 'form' | 'yaml'
   /** Whether the save is in flight. */
   saving: boolean
   /** Save failure text, on the dialog. */
   error: string | null
+}
+
+/**
+ * Rebuild the editor's form view from its current texts.
+ * @param draft - the open editor.
+ * @returns the parsed form models, or null per document the form cannot
+ * represent (the caller then refuses the form switch for it).
+ */
+function formsOf(draft: EditDraft): { metadata: MetadataForm; composition: CompositionForm } | null {
+  const metadata = parseMetadataForm(draft.metadata)
+  const composition = parseCompositionForm(draft.composition)
+  if (metadata === undefined || composition === undefined) return null
+  return { metadata, composition }
 }
 
 /** Page snapshot. */
@@ -168,6 +187,7 @@ export class AgentPresetSectionController {
     private readonly rosterChanged: () => void = () => {},
   ) {}
 
+
   private set(patch: Partial<AgentPresetSectionState>): void {
     this.store.set({ ...this.store.getSnapshot(), ...patch })
   }
@@ -249,7 +269,11 @@ export class AgentPresetSectionController {
   beginEdit(): void {
     const view = this.store.getSnapshot().view
     if (view === null || view.trust !== 'user') return
-    this.set({ edit: { id: view.id, metadata: view.metadata, composition: view.content, saving: false, error: null } })
+    const mode = parseMetadataForm(view.metadata) !== undefined
+      && parseCompositionForm(view.content) !== undefined
+      ? 'form'
+      : 'yaml'
+    this.set({ edit: { id: view.id, metadata: view.metadata, composition: view.content, mode, saving: false, error: null } })
   }
 
   /** Close the editor, discarding whatever was typed. */
@@ -276,6 +300,60 @@ export class AgentPresetSectionController {
     const { edit } = this.store.getSnapshot()
     if (edit === null || edit.saving) return
     this.set({ edit: { ...edit, composition, error: null } })
+  }
+
+  /**
+   * Switch the editor between the form and the raw text.
+   *
+   * Switching to the form re-parses the current texts and refuses when
+   * either document carries a shape the form would drop; switching to the
+   * text just shows what the form has been serializing all along.
+   * @param mode - the mode to show.
+   */
+  setEditMode(mode: 'form' | 'yaml'): void {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving || edit.mode === mode) return
+    if (mode === 'form' && formsOf(edit) === null) return
+    this.set({ edit: { ...edit, mode, error: null } })
+  }
+
+  /**
+   * Patch the metadata form and re-serialize it into the draft text.
+   * @param patch - the metadata form fields to replace; an explicit
+   * undefined clears the field.
+   */
+  patchMetadataForm(patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }): void {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving || edit.mode !== 'form') return
+    const forms = formsOf(edit)
+    if (forms === null) return
+    // A copy under Record-typed keys with omitted-absent spread, rather
+    // than dynamic deletes: renderMetadataForm only reads present fields.
+    const patchKeys = new Set(Object.keys(patch))
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(forms.metadata)) {
+      if (!patchKeys.has(key) && value !== undefined) next[key] = value
+    }
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) next[key] = value
+    }
+    this.set({
+      edit: { ...edit, metadata: renderMetadataForm(next as MetadataForm), error: null },
+    })
+  }
+
+  /**
+   * Patch the composition form and re-serialize it into the draft text.
+   * @param patch - the composition form fields to replace.
+   */
+  patchCompositionForm(patch: Partial<CompositionForm>): void {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving || edit.mode !== 'form') return
+    const forms = formsOf(edit)
+    if (forms === null) return
+    this.set({
+      edit: { ...edit, composition: renderCompositionForm({ ...forms.composition, ...patch }), error: null },
+    })
   }
 
   /**

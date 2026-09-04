@@ -14,6 +14,13 @@ export type AgentPresetSettingsKey =
   | 'brokenBadge' | 'brokenNoCopy' | 'switchRefused'
   | 'composition' | 'compositionFile' | 'metadataFile'
   | 'edit' | 'save' | 'saving'
+  | 'modeForm' | 'modeYaml' | 'formUnavailable'
+  | 'fieldName' | 'fieldDescription' | 'fieldOrder' | 'fieldIm'
+  | 'providerLabel' | 'modelLabel' | 'effortLabel'
+  | 'modelDefault' | 'modelUnset' | 'modelAdd' | 'modelRemove'
+  | 'modelFallbacks' | 'fallbackAdd' | 'fallbackRemove'
+  | 'rowId' | 'rowName' | 'rowConfig' | 'rowDisabled'
+  | 'rowAdd' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
   | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
@@ -66,6 +73,32 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   edit: 'Edit',
   save: 'Save',
   saving: 'Saving…',
+  modeForm: 'Form',
+  modeYaml: 'YAML',
+  formUnavailable: 'This preset uses structures the form cannot represent exactly; edit the YAML instead.',
+  fieldName: 'Display name',
+  fieldDescription: 'Description',
+  fieldOrder: 'Order',
+  fieldIm: 'IM bridge duty (dsh-<id> member per workspace)',
+  providerLabel: 'Provider',
+  modelLabel: 'Model',
+  effortLabel: 'Effort',
+  modelDefault: 'Default model',
+  modelUnset: '(not set — the host default answers)',
+  modelAdd: 'Set a default model',
+  modelRemove: 'Remove default model',
+  modelFallbacks: 'Fallback models (in order)',
+  fallbackAdd: '＋ fallback',
+  fallbackRemove: 'Remove this fallback',
+  rowId: 'Row id',
+  rowName: 'Plugin package',
+  rowConfig: 'Config (YAML)',
+  rowDisabled: 'Disabled',
+  rowAdd: '＋ plugin row',
+  rowRemove: 'Remove row',
+  rowUp: 'Move up',
+  rowDown: 'Move down',
+  configInvalid: 'The config snippet is not valid YAML; fix it or it stays as last saved.',
   cancel: 'Cancel',
   close: 'Close',
   retry: 'Retry',
@@ -129,6 +162,32 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   edit: '编辑',
   save: '保存',
   saving: '正在保存…',
+  modeForm: '表单',
+  modeYaml: 'YAML',
+  formUnavailable: '该预设含表单无法无损表示的结构，请用 YAML 编辑。',
+  fieldName: '显示名称',
+  fieldDescription: '描述',
+  fieldOrder: '排序',
+  fieldIm: 'IM 值守（每工作区注册 dsh-<id> 成员）',
+  providerLabel: '提供商',
+  modelLabel: '模型',
+  effortLabel: '思考档位',
+  modelDefault: '默认模型',
+  modelUnset: '（未设置 —— 使用全局默认）',
+  modelAdd: '设置默认模型',
+  modelRemove: '移除默认模型',
+  modelFallbacks: '备选模型（按序回退）',
+  fallbackAdd: '＋ 备选',
+  fallbackRemove: '移除该备选',
+  rowId: '行 id',
+  rowName: '插件包名',
+  rowConfig: '配置（YAML）',
+  rowDisabled: '禁用',
+  rowAdd: '＋ 插件行',
+  rowRemove: '移除该行',
+  rowUp: '上移',
+  rowDown: '下移',
+  configInvalid: '配置片段不是有效 YAML；请修正，否则保存时保留上次有效值。',
   cancel: '取消',
   close: '关闭',
   retry: '重试',

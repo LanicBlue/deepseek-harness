@@ -184,6 +184,13 @@ export function apply(ctx: ClientContext): void {
     setEditMetadata: (metadata: string) => { section.setEditMetadata(metadata) },
     setEditComposition: (composition: string) => { section.setEditComposition(composition) },
     saveEdit: () => section.saveEdit(),
+    setEditMode: (mode: 'form' | 'yaml') => { section.setEditMode(mode) },
+    patchMetadataForm: (patch) => { section.patchMetadataForm(patch) },
+    patchCompositionForm: (patch) => { section.patchCompositionForm(patch) },
+    modelProviders: async () => {
+      const result = await ctx.remote.llm.listProviders()
+      return result.ok ? result.value : []
+    },
     beginCopy: (from: string) => { section.beginCopy(from) },
     cancelCopy: () => { section.cancelCopy() },
     setCopyId: (id: string) => { section.setCopyId(id) },
