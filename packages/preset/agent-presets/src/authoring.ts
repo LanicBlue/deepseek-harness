@@ -5,10 +5,11 @@
  * the deployment, and letting a browser rewrite it would turn "reset to a known
  * preset" into something the same caller could have broken first.
  *
- * The only authoring write is a whole-directory copy of an existing preset.
- * No caller supplies composition text: the inputs are ids the host resolves
- * against its own roots plus an optional display name, so authoring grants no
- * capability the copied preset did not already carry.
+ * Two authoring writes exist, both confined to `user` trust: a
+ * whole-directory copy of an existing preset, and a validated file-level
+ * overwrite of a preset the roster already shows (the browser editor). The
+ * overwrite crosses composition text only after the host parsed it, so a
+ * refused document never reaches disk.
  * @module @deepseek-ai/dsh-agent-presets/authoring
  */
 
@@ -68,6 +69,40 @@ export function writableRoot(roots: readonly PresetRoot[], presetId: string): st
  */
 export async function readComposition(preset: AgentPreset): Promise<string> {
   return await readFile(preset.path, 'utf8')
+}
+
+/**
+ * Read one preset's metadata text, empty when the file is absent.
+ * @param preset - the resolved preset.
+ * @returns the file's contents, or the empty string.
+ */
+export async function readMetadataText(preset: AgentPreset): Promise<string> {
+  try {
+    return await readFile(join(dirname(preset.path), METADATA_FILE), 'utf8')
+  } catch {
+    // An absent metadata file is the common case, not a failure.
+    return ''
+  }
+}
+
+/**
+ * Overwrite one user-authored preset's metadata and composition files.
+ *
+ * Both texts arrive validated (the caller parsed them); the writes still go
+ * file-by-file with owner-only modes, matching what a fresh copy would carry,
+ * so an edited preset keeps the same weight as one the roster authored.
+ * @param preset - the resolved user-trust preset.
+ * @param metadata - the metadata file's full next contents.
+ * @param composition - the composition file's full next contents.
+ */
+export async function writePresetFiles(
+  preset: AgentPreset,
+  metadata: string,
+  composition: string,
+): Promise<void> {
+  const dir = dirname(preset.path)
+  await writeFileAtomic(join(dir, METADATA_FILE), metadata, { mode: 0o600, dirMode: 0o700 })
+  await writeFileAtomic(preset.path, composition, { mode: 0o600, dirMode: 0o700 })
 }
 
 /** Whether anything occupies the path (cp's own errorOnExist backstops races). */

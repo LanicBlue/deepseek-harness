@@ -6,8 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import { bridgeSessionId, deliverBrief, installModelFallback } from '../src/sessions.ts'
+import { bridgeSessionId, deliverBrief } from '../src/sessions.ts'
 
 let context: Context | undefined
 
@@ -49,9 +48,6 @@ async function stubRuntime(liveAgent: boolean, persistedOnDisk = false): Promise
     resume: resumed,
   } as never)
   ctx.provide('agentPresets', { mount: mounted } as never)
-  ctx.provide('agentDefaultModel', {
-    currentSelection: () => ({ provider: 'stub-provider', model: 'stub-model' }),
-  } as never)
   ctx.provide('workspaceRegistry', {
     create: async (path: string) => ({ path, attachSession: attached }),
   } as never)
@@ -107,7 +103,8 @@ describe('deliverBrief', () => {
     expect(options.sessionId).toBe(sessionId)
     expect(options.meta.cwd).toBe(runtime.workspacePath)
     expect(options.meta.agentPreset).toBe('plan')
-    // setup composes the agent: the preset mount plus the model fallback.
+    // setup composes the agent: the preset mount (which installs the
+    // preset-scoped model fallback itself).
     const agentCtx = new Context()
     await options.setup(agentCtx)
     expect(runtime.mounted).toHaveBeenCalledWith(agentCtx, 'plan')
@@ -165,49 +162,5 @@ describe('shared-store visibility', () => {
     const sessionId = bridgeSessionId(cwd, 'plan')
     ctx.sessions.create(sessionId, { meta: { cwd } })
     expect(ctx.sessions.list().map(session => session.id)).toContain(sessionId)
-  })
-})
-
-describe('installModelFallback', () => {
-  /** Capture the agent/request listener a fresh scoped context registered. */
-  async function capturedListener(
-    header: {
-      config: { provider: string; model: string; reasoningEffort?: string }
-      adapterDefaults?: { reasoningEffort?: boolean }
-    } | undefined,
-  ): Promise<(payload: unknown, next: () => Promise<unknown>) => Promise<unknown>> {
-    const ctx = new Context()
-    context = ctx
-    Object.assign(ctx, { agent: { session: { requestHeader: () => header } } } as never)
-    const calls: Array<[string, (payload: unknown, next: () => Promise<unknown>) => Promise<unknown>]> = []
-    const original = ctx.on.bind(ctx)
-    vi.spyOn(ctx, 'on').mockImplementation(((name: string, listener: never) => {
-      if (name === 'agent/request') calls.push([name, listener as never])
-      return original(name as never, listener)
-    }) as never)
-    installModelFallback(ctx as never, { provider: 'default-p', model: 'default-m', reasoningEffort: ReasoningEffortId('high') })
-    expect(calls).toHaveLength(1)
-    return calls[0]![1]
-  }
-
-  it('fills an empty seed with the default model selection', async () => {
-    const listener = await capturedListener(undefined)
-    const filled = await listener({}, async () => ({ provider: '', model: '' }))
-    expect(filled).toEqual({ provider: 'default-p', model: 'default-m', reasoningEffort: 'high' })
-  })
-
-  it('passes through a config another listener already resolved', async () => {
-    const listener = await capturedListener(undefined)
-    const resolved = { provider: 'picked-p', model: 'picked-m', reasoningEffort: 'low' as const }
-    await expect(listener({}, async () => ({ ...resolved }))).resolves.toEqual(resolved)
-  })
-
-  it('restores the logged request header after a restart instead of the default', async () => {
-    const listener = await capturedListener({
-      config: { provider: 'switched-p', model: 'switched-m', reasoningEffort: 'medium' },
-      adapterDefaults: { reasoningEffort: false },
-    })
-    const filled = await listener({}, async () => ({ provider: '', model: '', reasoningEffort: 'high' }))
-    expect(filled).toEqual({ provider: 'switched-p', model: 'switched-m', reasoningEffort: 'medium' })
   })
 })

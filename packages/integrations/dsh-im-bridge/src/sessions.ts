@@ -11,10 +11,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 // Type-only: resolves the agentDefaultModel / agentPresets / sessions /
 // workspaceRegistry Context service declarations this module calls.
-import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-session'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
@@ -24,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { createUserMessage, type LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -64,44 +63,6 @@ const DUTY_PREAMBLE = [
   'Never register, wait, or hold stations: the next brief arrives in this',
   'same session when the mission moves on.',
 ].join('\n')
-
-/**
- * Fill the request waterfall's model config for a bridged agent.
- *
- * The raw agent seed carries no provider/model (the bridge passes no
- * `agentOptions`), so without a filler every turn dies with "has no
- * provider/model". The filler defers to whoever already resolved a config —
- * the session controller's selection when the UI drives the turn — and only
- * fills an empty one: from the session's logged request header first (a model
- * switched in the UI survives a DSH restart), else the host's default model.
- * @param agentCtx - the agent's scoped context, fresh from create/resume setup.
- * @param fallback - default-model selection snapshot taken at (re)spawn time.
- */
-export function installModelFallback(agentCtx: Context, fallback: ModelSelection): void {
-  agentCtx.on('agent/request', async (_payload, next): Promise<LlmCallConfig> => {
-    const resolved = await next()
-    if (resolved.provider !== '' && resolved.model !== '') return resolved
-    const agent = agentCtx.agent
-    if (agent === undefined) throw new Error('im-bridge: agent setup has no scoped Agent')
-    const logged = agent.session.requestHeader()
-    if (logged === undefined) {
-      const { reasoningEffort: _inherited, ...rest } = resolved
-      return { ...rest, ...fallback }
-    }
-    // An effort the adapter defaulted is not a conversation choice.
-    const { reasoningEffort: _inherited, ...rest } = resolved
-    return {
-      ...rest,
-      provider: logged.config.provider,
-      model: logged.config.model,
-      ...(logged.config.reasoningEffort === undefined
-        || logged.adapterDefaults?.reasoningEffort === true
-        ? {}
-        : { reasoningEffort: logged.config.reasoningEffort }),
-    }
-  })
-}
-
 /**
  * The deterministic session id one (workspace, preset) pair works in.
  *
@@ -181,8 +142,10 @@ export async function deliverBrief(
     agent = live
   } else {
     const compose = async (agentCtx: Context): Promise<void> => {
+      // The mount installs the preset-scoped model fallback (logged header,
+      // then the preset's authored model chain, then the host default), so a
+      // bridged agent always carries a provider/model without bridge help.
       await ctx.agentPresets.mount(agentCtx, presetId)
-      installModelFallback(agentCtx, ctx.agentDefaultModel.currentSelection())
     }
     const persisted = await sessionExistsOnDisk(ctx, sessionId)
     if (persisted) {

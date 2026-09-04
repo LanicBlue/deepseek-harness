@@ -12,7 +12,7 @@ import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { AgentPresetSectionController, draftBlocker } from '../src/client/section-store.ts'
 import type { CopyDraft, PresetRow } from '../src/client/section-store.ts'
 
-interface FakePreset { trust: 'system' | 'user'; content: string; name?: string }
+interface FakePreset { trust: 'system' | 'user'; content: string; metadata?: string; name?: string }
 interface Recorded { method: string; payload: unknown }
 
 interface FakeOptions {
@@ -22,6 +22,8 @@ interface FakeOptions {
   failList?: string
   /** Reject `read` with this message. */
   failRead?: string
+  /** Reject `write` with this message. */
+  failWrite?: string
   /** Reject `copy` with this message. */
   failCopy?: string
   /** Reject `openDocument` with this message. */
@@ -82,6 +84,7 @@ function fakeCtx(
             agentPreset,
             trust: preset.trust,
             content: preset.content,
+            metadata: preset.metadata ?? '',
             ...preset.name === undefined ? {} : { name: preset.name },
           })
         },
@@ -101,8 +104,20 @@ function fakeCtx(
           presets.set(id, {
             trust: 'user',
             content: source.content,
+            ...source.metadata === undefined ? {} : { metadata: source.metadata },
             ...name === undefined ? {} : { name },
           })
+          return remoteOk(undefined)
+        },
+        write: (agentPreset: string, metadata: string, composition: string) => {
+          record('write', { agentPreset, metadata, composition })
+          if (options.failWrite !== undefined) return remoteFail(options.failWrite)
+          const preset = presets.get(agentPreset)
+          /* v8 ignore next -- every test writes an id the fake store holds */
+          if (preset === undefined) return remoteFail(`unknown preset ${agentPreset}`)
+          if (preset.trust === 'system') return remoteFail('preset ships with the deployment')
+          preset.content = composition
+          preset.metadata = metadata
           return remoteOk(undefined)
         },
         deletePreset: async (id: string) => {
@@ -141,7 +156,12 @@ function fakeCtx(
 
 function seed(): Map<string, FakePreset> {
   return new Map<string, FakePreset>([
-    ['standard', { trust: 'system', content: '- id: tool-bash\n', name: '标准模式' }],
+    ['standard', {
+      trust: 'system',
+      content: '- id: tool-bash\n',
+      metadata: 'name: Standard\ndescription: The full composition.\n',
+      name: '标准模式',
+    }],
     ['mine', { trust: 'user', content: '- id: tool-read\n' }],
   ])
 }
@@ -230,6 +250,7 @@ describe('the read-only viewer', () => {
 
     expect(controller.store.getSnapshot().view).toEqual({
       id: 'standard', title: '标准模式', content: '- id: tool-bash\n',
+      metadata: 'name: Standard\ndescription: The full composition.\n', trust: 'system',
     })
   })
 
@@ -545,5 +566,59 @@ describe('the default preset', () => {
     await controller.makeDefault('mine')
 
     expect(controller.store.getSnapshot().error).toContain('read-only settings')
+  })
+})
+
+describe('the browser editor', () => {
+  it('edits only what the viewer is showing and only for user trust', async () => {
+    const { controller, calls } = harness()
+    await controller.load()
+    await controller.view('standard')
+
+    // A shipped preset stays read-only: the editor does not even open.
+    controller.beginEdit()
+    expect(controller.store.getSnapshot().edit).toBeNull()
+
+    await controller.view('mine')
+    controller.beginEdit()
+    const edit = controller.store.getSnapshot().edit
+    expect(edit).toMatchObject({ id: 'mine', composition: '- id: tool-read\n', saving: false })
+
+    controller.setEditMetadata('name: Mine\n')
+    controller.setEditComposition('- id: tool-read\n  name: \'@deepseek-ai/dsh-tool-read\'\n')
+    await controller.saveEdit()
+
+    const write = calls.find(call => call.method === 'write')
+    expect(write?.payload).toMatchObject({ agentPreset: 'mine', metadata: 'name: Mine\n' })
+    expect(controller.store.getSnapshot().edit).toBeNull()
+    // The stored view converged on what the host now holds.
+    expect(controller.store.getSnapshot().view?.metadata).toBe('name: Mine\n')
+  })
+
+  it('keeps the editor open with the refusal when the save fails', async () => {
+    const { controller } = harness({ failWrite: 'preset ships with the deployment' })
+    await controller.load()
+    await controller.view('mine')
+    controller.beginEdit()
+
+    await controller.saveEdit()
+
+    const edit = controller.store.getSnapshot().edit
+    expect(edit?.saving).toBe(false)
+    expect(edit?.error).toContain('ships with the deployment')
+  })
+
+  it('canceling discards the drafts without touching the host', async () => {
+    const { controller, calls } = harness()
+    await controller.load()
+    await controller.view('mine')
+    controller.beginEdit()
+    controller.setEditMetadata('name: Discarded\n')
+
+    controller.cancelEdit()
+
+    expect(controller.store.getSnapshot().edit).toBeNull()
+    expect(controller.store.getSnapshot().view?.metadata).toBe('')
+    expect(calls.find(call => call.method === 'write')).toBeUndefined()
   })
 })

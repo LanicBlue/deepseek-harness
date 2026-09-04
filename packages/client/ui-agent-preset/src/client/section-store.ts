@@ -60,14 +60,32 @@ export interface CopyDraft {
   error: string | null
 }
 
-/** The read-only composition viewer over one shipped preset. */
+/** The read-only viewer over one preset's files. */
 export interface PresetView {
-  /** The preset whose composition is shown. */
+  /** The preset whose files are shown. */
   id: string
   /** Display name, for the dialog title. */
   title: string
   /** Composition text exactly as stored. */
   content: string
+  /** Metadata text exactly as stored, empty when the preset ships none. */
+  metadata: string
+  /** Trust of the root the preset was discovered under. */
+  trust: 'system' | 'user'
+}
+
+/** The open editor over one user-authored preset's two files. */
+export interface EditDraft {
+  /** The preset being edited. */
+  id: string
+  /** Metadata text as typed. */
+  metadata: string
+  /** Composition text as typed. */
+  composition: string
+  /** Whether the save is in flight. */
+  saving: boolean
+  /** Save failure text, on the dialog. */
+  error: string | null
 }
 
 /** Page snapshot. */
@@ -85,6 +103,8 @@ export interface AgentPresetSectionState {
   copy: CopyDraft | null
   /** The open read-only viewer, or null. */
   view: PresetView | null
+  /** The open editor over one user-authored preset, or null. */
+  edit: EditDraft | null
   /** The preset awaiting delete confirmation. */
   pendingDelete: string | null
   /** Whether a delete is in flight. */
@@ -104,6 +124,7 @@ const INITIAL: AgentPresetSectionState = {
   rows: [],
   copy: null,
   view: null,
+  edit: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -178,7 +199,7 @@ export class AgentPresetSectionController {
     const hasDocument = described.ok && described.value
     if (presets.length === 0) {
       // Nothing to manage leaves nothing to keep a dialog open over.
-      this.set({ status: 'unavailable', rows: [], authorable, hasDocument, copy: null, view: null })
+      this.set({ status: 'unavailable', rows: [], authorable, hasDocument, copy: null, view: null, edit: null })
       return
     }
     // A reveal outlives a reload but not its preset: a path for a row the
@@ -208,13 +229,73 @@ export class AgentPresetSectionController {
       this.set({ error: result.error.message })
       return
     }
-    const { name, content } = result.value
-    this.set({ view: { id, title: name ?? id, content } })
+    const { name, content, metadata, trust } = result.value
+    this.set({ view: { id, title: name ?? id, content, metadata, trust } })
   }
 
   /** Close the read-only viewer. */
   closeView(): void {
     this.set({ view: null })
+  }
+
+  /**
+   * Open the editor over the preset the viewer is showing.
+   *
+   * Only a user-authored preset edits in the browser: the shipped set is the
+   * known-good baseline a copy starts from, so it stays read-only and its
+   * route to change is duplicating it first.
+   * @returns once the drafts reflect the stored files.
+   */
+  beginEdit(): void {
+    const view = this.store.getSnapshot().view
+    if (view === null || view.trust !== 'user') return
+    this.set({ edit: { id: view.id, metadata: view.metadata, composition: view.content, saving: false, error: null } })
+  }
+
+  /** Close the editor, discarding whatever was typed. */
+  cancelEdit(): void {
+    if (this.store.getSnapshot().edit?.saving === true) return
+    this.set({ edit: null })
+  }
+
+  /**
+   * Update the metadata draft.
+   * @param metadata - the metadata text as typed.
+   */
+  setEditMetadata(metadata: string): void {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving) return
+    this.set({ edit: { ...edit, metadata, error: null } })
+  }
+
+  /**
+   * Update the composition draft.
+   * @param composition - the composition text as typed.
+   */
+  setEditComposition(composition: string): void {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving) return
+    this.set({ edit: { ...edit, composition, error: null } })
+  }
+
+  /**
+   * Save the drafts to the preset's files, then re-read the roster and the
+   * stored view so the page converges on what the host now holds.
+   * @returns once the save settled and the page reflects it.
+   */
+  async saveEdit(): Promise<void> {
+    const { edit } = this.store.getSnapshot()
+    if (edit === null || edit.saving) return
+    this.set({ edit: { ...edit, saving: true, error: null } })
+    const result = await this.ctx.remote.agentPresets.write(edit.id, edit.metadata, edit.composition)
+    if (!result.ok) {
+      this.set({ edit: { ...edit, saving: false, error: result.error.message } })
+      return
+    }
+    this.set({ edit: null })
+    await this.load()
+    this.rosterChanged()
+    await this.view(edit.id)
   }
 
   /**

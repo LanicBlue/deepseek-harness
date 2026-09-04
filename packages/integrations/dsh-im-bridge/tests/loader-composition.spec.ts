@@ -47,7 +47,7 @@ describe('bundle patch composition', () => {
             update: async () => {},
           }),
         } as never)
-        for (const service of ['agents', 'agentDefaultModel', 'agentPresets', 'sessionQuery', 'sessions', 'workspaceRegistry']) {
+        for (const service of ['agents', 'agentPresets', 'sessionQuery', 'sessions', 'workspaceRegistry']) {
           ctx.provide(service as never, {} as never)
         }
       },

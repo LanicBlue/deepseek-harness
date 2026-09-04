@@ -25,6 +25,7 @@ import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
+import yaml from 'js-yaml'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
@@ -38,7 +39,10 @@ import type SettingsService from '@deepseek-ai/dsh-settings'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
-import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
+import {
+  copyComposition, deleteComposition, presetExists, readComposition, readMetadataText, writePresetFiles,
+} from './authoring.ts'
+import { installPresetModelFallback } from './model-default.ts'
 import { livePresetMounts, mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import {
   fileComposition, mountedCompositionRows,
@@ -74,13 +78,17 @@ export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts'
 export {
-  METADATA_FILE, readPresetMetadata, renderPresetMetadata, type PresetMetadata,
+  METADATA_FILE, readPresetMetadata, renderPresetMetadata,
+  type PresetMetadata, type PresetModelSelection,
 } from './metadata.ts'
 export {
   inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor,
   type JoinedPresetMount, type PresetMount,
 } from './mount.ts'
 export { copyComposition, deleteComposition, readComposition, writableRoot } from './authoring.ts'
+export {
+  firstUsableCandidate, installPresetModelFallback, presetModelCandidates,
+} from './model-default.ts'
 export { agentPresetProjectionDefinition } from './session.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
 
@@ -97,6 +105,31 @@ declare module '@deepseek-ai/cordis' {
  * call so a preset authored while the process runs is visible immediately,
  * and a preset deleted underneath a picker disappears from the next read.
  */
+/** Parse editable metadata text: a mapping or empty parses, anything else does not. */
+function parseEditableMetadata(text: string): unknown | undefined {
+  if (text.trim() === '') return null
+  try {
+    const parsed: unknown = yaml.load(text)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+/** Parse editable composition text: a list of row records parses, else not. */
+function parseEditableComposition(text: string): unknown | undefined {
+  try {
+    const parsed: unknown = yaml.load(text)
+    if (!Array.isArray(parsed)) return undefined
+    return parsed.every(row => typeof row === 'object' && row !== null && !Array.isArray(row))
+      ? parsed
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export class AgentPresets extends TypertRemoteService {
   static inject = ['loader', 'sessionProjections']
 
@@ -424,6 +457,11 @@ export class AgentPresets extends TypertRemoteService {
     // composed agent to another preset; a later recompose layer re-links
     // through it under the caller-owned blank-session contract.
     this.bindings.set(agentKey, bindScopeParent(agentKey, standing.key))
+    // The preset's authored model chain rides with every mount, so agents
+    // composed without a driver-level selection (bridged, SDK-driven) get a
+    // working provider/model too; the fill-only-empty contract keeps every
+    // stronger chooser (UI pick, logged header, controller selection) first.
+    installPresetModelFallback(agentCtx, preset)
     return preset
   }
 
@@ -518,9 +556,61 @@ export class AgentPresets extends TypertRemoteService {
       agentPreset: preset.id,
       trust: preset.trust,
       content: await this.read(preset.id),
+      metadata: await readMetadataText(preset),
       ...preset.name === undefined ? {} : { name: preset.name },
       ...preset.description === undefined ? {} : { description: preset.description },
     }
+  }
+
+  /**
+   * Overwrite one user-authored preset's metadata and composition files.
+   *
+   * Both documents must parse before anything reaches disk: the metadata as a
+   * mapping (or empty for "delete the display text" — though an empty
+   * metadata write is stored as-is, leaving the file present but blank reads
+   * the same as absent), the composition as a list of rows. A `system`
+   * preset is refused: shipped compositions are the known-good baseline a
+   * copy starts from. The settled standing mount under the id is dropped so
+   * the next session composes the edited generation, matching what a copy
+   * into a freed id does.
+   * @param agentPreset - the user-trust preset to overwrite.
+   * @param metadata - the metadata file's full next contents.
+   * @param composition - the composition file's full next contents.
+   * @returns once both files are stored.
+   * @throws {RemoteError} `gateway/bad-request` for an empty id,
+   * `agent-preset/not-found` when no root supplies the id, and
+   * `agent-preset/invalid` for a preset the host did not author or documents
+   * that do not parse.
+   */
+  @Remote('write')
+  async writeDocument(agentPreset: string, metadata: string, composition: string): Promise<void> {
+    validatePresetId(agentPreset, 'agentPreset')
+    const preset = await this.resolve(agentPreset)
+    if (preset.trust !== 'user') {
+      throw new RemoteError(
+        'agent-preset/invalid',
+        `agent-presets: preset "${preset.id}" ships with the deployment; only user-authored presets are writable`,
+        { agentPreset: preset.id, reason: 'system-trust' },
+      )
+    }
+    const parsedMetadata = parseEditableMetadata(metadata)
+    const parsedComposition = parseEditableComposition(composition)
+    if (parsedMetadata === undefined) {
+      throw new RemoteError(
+        'agent-preset/invalid',
+        `agent-presets: preset "${preset.id}" metadata must be a YAML mapping (or empty)`,
+        { agentPreset: preset.id, reason: 'metadata-not-a-mapping' },
+      )
+    }
+    if (parsedComposition === undefined) {
+      throw new RemoteError(
+        'agent-preset/invalid',
+        `agent-presets: preset "${preset.id}" composition must be a YAML list of plugin rows`,
+        { agentPreset: preset.id, reason: 'composition-not-a-list' },
+      )
+    }
+    await writePresetFiles(preset, metadata, composition)
+    this.standing.delete(preset.id)
   }
 
   /**

@@ -169,6 +169,7 @@ describe('reading one composition', () => {
       agentPreset: 'standard',
       trust: 'system',
       content: await ctx.agentPresets.read('standard'),
+      metadata: '',
     })
   })
 
@@ -192,6 +193,7 @@ describe('reading one composition', () => {
       agentPreset: 'documented',
       trust: 'user',
       content: VALID,
+      metadata: 'name: 我的模式\ndescription: 只做检索。\n',
       name: '我的模式',
       description: '只做检索。',
     })
@@ -457,5 +459,75 @@ describe('switching one session\'s composition', () => {
     vi.spyOn(ctx.agentPresets, 'recompose').mockRejectedValueOnce(thrown)
 
     await expect(ctx.agentPresets.select(agent, 'minimal')).rejects.toBe(thrown)
+  })
+})
+
+describe('writeDocument', () => {
+  /** A user-trust roster over one temp preset directory pair. */
+  async function userHarness(): Promise<{ ctx: Context; root: string }> {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-write-'))
+    await mkdir(join(root, 'editable'), { recursive: true })
+    await writeFile(join(root, 'editable', COMPOSITION_FILE), VALID)
+    await writeFile(join(root, 'editable', METADATA_FILE), 'name: 旧名字\n')
+    const ctx = await harness({
+      default: 'editable',
+      roots: [{ path: root, trust: 'user' }],
+      includeShippedRoot: false,
+      includeUserRoot: false,
+    })
+    return { ctx, root }
+  }
+
+  it('stores both documents and the roster reflects the edit', async () => {
+    const { ctx } = await userHarness()
+
+    await ctx.agentPresets.writeDocument(
+      'editable',
+      'name: 新名字\ndescription: 改过。\n',
+      VALID + "- id: second\n  name: '@deepseek-ai/dsh-system-prompt'\n",
+    )
+
+    expect(await ctx.agentPresets.readDocument('editable')).toMatchObject({
+      metadata: 'name: 新名字\ndescription: 改过。\n',
+      name: '新名字',
+      description: '改过。',
+    })
+    const roster = await ctx.agentPresets.remoteExportList()
+    expect(roster.presets.find(row => row.id === 'editable')?.name).toBe('新名字')
+  })
+
+  it('refuses a preset the host shipped', async () => {
+    const ctx = await harness()
+
+    const failure = await remoteFailure(ctx.agentPresets.writeDocument('standard', 'name: x\n', VALID))
+
+    expect(failure.code).toBe('agent-preset/invalid')
+    expect(reasonOf(failure)).toContain('system-trust')
+  })
+
+  it('refuses metadata that is not a mapping', async () => {
+    const { ctx } = await userHarness()
+
+    const failure = await remoteFailure(ctx.agentPresets.writeDocument('editable', '- one\n- two\n', VALID))
+
+    expect(failure.code).toBe('agent-preset/invalid')
+    expect(reasonOf(failure)).toContain('metadata-not-a-mapping')
+  })
+
+  it('refuses a composition that is not a row list', async () => {
+    const { ctx } = await userHarness()
+
+    const failure = await remoteFailure(ctx.agentPresets.writeDocument('editable', '', 'name: a mapping\n'))
+
+    expect(failure.code).toBe('agent-preset/invalid')
+    expect(reasonOf(failure)).toContain('composition-not-a-list')
+  })
+
+  it('refused documents leave the stored files untouched', async () => {
+    const { ctx } = await userHarness()
+
+    await remoteFailure(ctx.agentPresets.writeDocument('editable', 'bad: [unclosed', VALID)).catch(() => {})
+
+    expect((await ctx.agentPresets.readDocument('editable')).metadata).toBe('name: 旧名字\n')
   })
 })

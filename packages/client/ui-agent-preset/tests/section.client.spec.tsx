@@ -28,6 +28,7 @@ const READY: AgentPresetSectionState = {
   ],
   copy: null,
   view: null,
+  edit: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -143,18 +144,17 @@ describe('the preset list', () => {
     expect(actions.makeDefault).not.toHaveBeenCalled()
   })
 
-  it('offers View on a shipped row and the location on a custom one', () => {
+  it('offers View on every row and the location beside it on a custom one', () => {
     renderSection()
 
-    // A shipped preset is the composition a copy starts from — reading it is
-    // the point. A custom preset is edited in its files, so its row leads
-    // there instead; there is no editor for either.
+    // Every preset opens in the viewer; a custom one additionally leads to
+    // its files (and graduates to the editor from the same viewer).
     const standard = rowFor('standard')
     expect(within(standard).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` })).toBeTruthy()
     expect(within(standard).queryByRole('button', { name: `${en.openLocation}: ${en.presetStandardName}` })).toBeNull()
     const mine = rowFor('mine')
+    expect(within(mine).getByRole('button', { name: `${en.view}: mine` })).toBeTruthy()
     expect(within(mine).getByRole('button', { name: `${en.openLocation}: mine` })).toBeTruthy()
-    expect(within(mine).queryByRole('button', { name: `${en.view}: mine` })).toBeNull()
   })
 
   it('offers Delete only for a locally authored preset', () => {
@@ -399,7 +399,7 @@ describe('the copy dialog', () => {
 
 describe('the read-only viewer', () => {
   it('shows the composition text under the preset\'s name', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: tool-bash\n' } })
+    renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: tool-bash\n', metadata: '', trust: 'system' as const } })
 
     const dialog = screen.getByRole('dialog')
     expect(dialog.getAttribute('aria-label')).toBe(`${en.view} · ${en.presetStandardName}`)
@@ -408,13 +408,13 @@ describe('the read-only viewer', () => {
   })
 
   it('keeps the loaded title when the viewed row leaves the roster', () => {
-    renderSection({ view: { id: 'retired', title: 'Retired mode', content: '- id: tool-bash\n' } })
+    renderSection({ view: { id: 'retired', title: 'Retired mode', content: '- id: tool-bash\n', metadata: '', trust: 'system' as const } })
 
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(`${en.view} · Retired mode`)
   })
 
   it('closes through the controller', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n', metadata: '', trust: 'system' as const } })
 
     fireEvent.click(within(screen.getByRole('dialog')).getByText(en.close))
 
@@ -422,7 +422,7 @@ describe('the read-only viewer', () => {
   })
 
   it('dismisses on Escape', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n', metadata: '', trust: 'system' as const } })
 
     fireEvent.keyDown(document, { key: 'Escape' })
 

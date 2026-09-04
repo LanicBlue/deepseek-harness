@@ -44,6 +44,45 @@ export interface PresetMetadata {
    * flag never blocks mounting, it just leaves the preset unbridged.
    */
   readonly im?: boolean
+  /**
+   * Default model for sessions composed from this preset. Applies only when
+   * nothing stronger chose first — a UI model pick and the session's logged
+   * request header both win — and only while the provider route is actually
+   * registered; otherwise the chain falls through {@link modelFallbacks} and
+   * finally the host's global default model.
+   */
+  readonly model?: PresetModelSelection
+  /** Additional models tried, in order, when {@link model} is unusable. */
+  readonly modelFallbacks?: readonly PresetModelSelection[]
+}
+
+/** One provider/model/effort answer a preset may default to. */
+export interface PresetModelSelection {
+  /** Registered provider route. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Adapter-owned reasoning effort, or provider/default behavior when absent. */
+  readonly reasoningEffort?: string
+}
+
+/**
+ * Coerce one untrusted value into a model selection, or undefined.
+ * @param value - the parsed YAML node.
+ * @returns the validated selection, or undefined for anything unusable.
+ */
+function modelSelection(value: unknown): PresetModelSelection | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const provider = text(record.provider)
+  const model = text(record.model)
+  if (provider === undefined || model === undefined) return undefined
+  const effort = text(record.reasoningEffort)
+  return {
+    provider,
+    model,
+    ...effort === undefined ? {} : { reasoningEffort: effort },
+  }
 }
 
 /** A non-empty trimmed string, or undefined for anything else. */
@@ -86,11 +125,17 @@ export async function readPresetMetadata(directory: string): Promise<PresetMetad
     ? record.order
     : undefined
   const im = record.im === true
+  const model = modelSelection(record.model)
+  const fallbacks = Array.isArray(record.modelFallbacks)
+    ? record.modelFallbacks.map(modelSelection).filter((v): v is PresetModelSelection => v !== undefined)
+    : undefined
   return {
     ...name === undefined ? {} : { name },
     ...description === undefined ? {} : { description },
     ...order === undefined ? {} : { order },
     ...im ? { im: true } : {},
+    ...model === undefined ? {} : { model },
+    ...fallbacks === undefined || fallbacks.length === 0 ? {} : { modelFallbacks: fallbacks },
   }
 }
 
@@ -106,7 +151,12 @@ export function renderPresetMetadata(metadata: PresetMetadata): string | undefin
   const name = text(metadata.name)
   const description = text(metadata.description)
   const { order } = metadata
-  if (name === undefined && description === undefined && order === undefined && metadata.im !== true) {
+  const model = modelSelection(metadata.model)
+  const fallbacks = metadata.modelFallbacks === undefined
+    ? undefined
+    : metadata.modelFallbacks.map(modelSelection).filter((v): v is PresetModelSelection => v !== undefined)
+  if (name === undefined && description === undefined && order === undefined
+    && metadata.im !== true && model === undefined && (fallbacks === undefined || fallbacks.length === 0)) {
     return undefined
   }
   return yaml.dump({
@@ -114,5 +164,7 @@ export function renderPresetMetadata(metadata: PresetMetadata): string | undefin
     ...description === undefined ? {} : { description },
     ...order === undefined ? {} : { order },
     ...metadata.im === true ? { im: true } : {},
+    ...model === undefined ? {} : { model },
+    ...fallbacks === undefined || fallbacks.length === 0 ? {} : { modelFallbacks: fallbacks },
   }, { lineWidth: -1 })
 }

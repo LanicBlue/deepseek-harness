@@ -1,12 +1,12 @@
 /**
  * Agent-presets settings section: the roster as cards, a copy dialog as the
- * only way a preset is created, and a read-only viewer over the shipped
- * compositions.
+ * guided way a preset is created, and a two-file viewer over every preset —
+ * shipped and custom alike.
  *
- * The browser edits no composition text — a shipped preset opens read-only to
- * be READ (it is the known-good composition a copy starts from), and a custom
- * preset is edited in its own files, which is what the location action leads
- * to. Deleting a preset leaves running sessions alone: a composition is
+ * The browser edits composition text for USER-authored presets only: a
+ * shipped preset opens read-only to be READ (it is the known-good
+ * composition a copy starts from), and its route to change is duplicating it
+ * first. Deleting a preset leaves running sessions alone: a composition is
  * mounted once at session creation and nothing re-reads the file.
  */
 
@@ -33,6 +33,16 @@ export interface AgentPresetSectionInjected {
   view: (id: string) => Promise<void>
   /** Close the read-only viewer. */
   closeView: () => void
+  /** Open the editor over the preset the viewer is showing (user trust only). */
+  beginEdit: () => void
+  /** Close the editor, discarding the drafts. */
+  cancelEdit: () => void
+  /** Update the metadata draft. */
+  setEditMetadata: (metadata: string) => void
+  /** Update the composition draft. */
+  setEditComposition: (composition: string) => void
+  /** Save the drafts, then converge the page on the stored result. */
+  saveEdit: () => Promise<void>
   /** Open the copy dialog over one preset. */
   beginCopy: (from: string) => void
   /** Close the copy dialog, discarding the draft. */
@@ -178,11 +188,12 @@ function CardDescription({ text }: { text: string }): ReactNode {
 export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const { useAgentPresetSection, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
-  const viewedId = state.view?.id
+  const viewedId = state.view?.id ?? state.edit?.id
   const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
-  const viewedTitle = state.view === null
+  const viewedTitle = state.view === null && state.edit === null
     ? ''
-    : viewedRow === undefined ? state.view.title : presetDisplayText(viewedRow, t).name
+    : viewedRow === undefined ? (state.view?.title ?? state.edit?.id ?? '') : presetDisplayText(viewedRow, t).name
+  const [viewerTab, setViewerTab] = useState<'composition' | 'metadata'>('composition')
 
   useEffect(() => {
     void load()
@@ -312,38 +323,36 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       <code className={css.cardId}>{row.id}</code>
                     </button>
                     <div className={css.cardFoot}>
-                      {/* Shipped presets are the compositions a copy starts
-                        from, so READING one is the point; a custom preset is
-                        edited in its files instead, which the location action
-                        leads to. A broken shipped preset has no readable
-                        composition to offer, so its viewer is withheld; a
-                        broken custom one keeps the location action — the
-                        files are where it gets fixed. */}
-                      {row.trust === 'system'
-                        ? row.broken === undefined
-                          ? (
-                            <button
-                              type="button"
-                              className={css.iconButton}
-                              data-tip={t('view')}
-                              aria-label={`${t('view')}: ${text.name}`}
-                              onClick={() => { void props.view(row.id) }}
-                            >
-                              <IconBrowseOutline16 />
-                            </button>
-                          )
-                          : null
-                        : (
-                          <button
-                            type="button"
-                            className={css.iconButton}
-                            data-tip={state.hasDocument ? t('openLocation') : t('showLocation')}
-                            aria-label={`${state.hasDocument ? t('openLocation') : t('showLocation')}: ${text.name}`}
-                            onClick={() => { void props.openLocation(row.id) }}
-                          >
-                            <IconFolderOpenOutline16 />
-                          </button>
-                        )}
+                      {/* Every preset opens in the viewer: reading a shipped
+                        one is the point (it is the known-good composition a
+                        copy starts from), and a custom one graduates to the
+                        in-browser editor from the same viewer. A broken
+                        preset has no readable composition to offer, so its
+                        viewer is withheld; a broken custom one keeps the
+                        location action — the files are where it gets
+                        fixed. */}
+                      {row.broken === undefined ? (
+                        <button
+                          type="button"
+                          className={css.iconButton}
+                          data-tip={t('view')}
+                          aria-label={`${t('view')}: ${text.name}`}
+                          onClick={() => { void props.view(row.id) }}
+                        >
+                          <IconBrowseOutline16 />
+                        </button>
+                      ) : null}
+                      {row.trust === 'user' ? (
+                        <button
+                          type="button"
+                          className={css.iconButton}
+                          data-tip={state.hasDocument ? t('openLocation') : t('showLocation')}
+                          aria-label={`${state.hasDocument ? t('openLocation') : t('showLocation')}: ${text.name}`}
+                          onClick={() => { void props.openLocation(row.id) }}
+                        >
+                          <IconFolderOpenOutline16 />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className={css.iconButton}
@@ -397,21 +406,84 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
         }}
       />
       <Modal
-        open={state.view !== null}
-        onClose={() => { props.closeView() }}
-        title={state.view === null ? '' : `${t('view')} · ${viewedTitle}`}
+        open={state.view !== null || state.edit !== null}
+        onClose={() => {
+          if (state.edit !== null) props.cancelEdit()
+          else props.closeView()
+        }}
+        title={viewedTitle === '' ? t('view') : `${t('view')} · ${viewedTitle}`}
         closeLabel={t('close')}
         description={t('composition')}
         className={css.dialog as string}
-        footer={(
-          <Button variant="outline" autoFocus onClick={() => { props.closeView() }}>
-            {t('close')}
-          </Button>
+        footer={state.edit === null ? (
+          <>
+            {state.view?.trust === 'user' ? (
+              <Button variant="outline" onClick={() => { props.beginEdit() }}>
+                {t('edit')}
+              </Button>
+            ) : null}
+            <Button variant="outline" autoFocus onClick={() => { props.closeView() }}>
+              {t('close')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" disabled={state.edit.saving} onClick={() => { props.cancelEdit() }}>
+              {t('cancel')}
+            </Button>
+            <Button disabled={state.edit.saving} onClick={() => { void props.saveEdit() }}>
+              {state.edit.saving ? t('saving') : t('save')}
+            </Button>
+          </>
         )}
       >
-        {state.view === null
-          ? null
-          : <pre className={css.viewerCode}>{state.view.content}</pre>}
+        {state.edit === null
+          ? state.view === null ? null : (
+            <>
+              <div className={css.viewerTabs} role="tablist">
+                {([['composition', 'compositionFile'], ['metadata', 'metadataFile']] as const).map(
+                  ([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={viewerTab === tab}
+                      className={viewerTab === tab ? `${css.viewerTab} ${css.viewerTabActive}` : css.viewerTab}
+                      onClick={() => { setViewerTab(tab) }}
+                    >
+                      {t(label)}
+                    </button>
+                  ),
+                )}
+              </div>
+              <pre className={css.viewerCode}>
+                {viewerTab === 'composition' ? state.view.content : state.view.metadata}
+              </pre>
+            </>
+          )
+          : (
+            <div className={css.editorFields}>
+              <label className={css.editorField}>
+                <span className={css.fieldLabel}>{t('metadataFile')}</span>
+                <textarea
+                  className={css.editorText}
+                  value={state.edit.metadata}
+                  spellCheck={false}
+                  onChange={(event) => { props.setEditMetadata(event.target.value) }}
+                />
+              </label>
+              <label className={css.editorField}>
+                <span className={css.fieldLabel}>{t('compositionFile')}</span>
+                <textarea
+                  className={css.editorText}
+                  value={state.edit.composition}
+                  spellCheck={false}
+                  onChange={(event) => { props.setEditComposition(event.target.value) }}
+                />
+              </label>
+              {state.edit.error === null ? null : <p className={css.error} role="alert">{state.edit.error}</p>}
+            </div>
+          )}
       </Modal>
       <Modal
         open={state.pendingDelete !== null}

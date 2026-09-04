@@ -120,6 +120,37 @@ describe('rendering display metadata', () => {
     expect(renderPresetMetadata({ im: false })).toBeUndefined()
   })
 
+  it('parses and round-trips a default model with fallbacks', async () => {
+    const rendered = renderPresetMetadata({
+      name: '冒烟',
+      model: { provider: 'minimax-cn', model: 'MiniMax-M3', reasoningEffort: 'high' },
+      modelFallbacks: [{ provider: 'zai-coding-cn', model: 'glm-5.3' }],
+    })
+    const dir = await presetDir(rendered)
+
+    expect(await readPresetMetadata(dir)).toEqual({
+      name: '冒烟',
+      model: { provider: 'minimax-cn', model: 'MiniMax-M3', reasoningEffort: 'high' },
+      modelFallbacks: [{ provider: 'zai-coding-cn', model: 'glm-5.3' }],
+    })
+  })
+
+  it('drops unusable model shapes instead of failing the read', async () => {
+    const dir = await presetDir([
+      'name: 冒烟',
+      'model: plain-string',
+      'modelFallbacks:',
+      '  - provider: only-provider',
+      '  - { provider: p, model: m }',
+    ].join('\n'))
+
+    // The fallback list keeps its one usable entry; the unusable shapes vanish.
+    expect(await readPresetMetadata(dir)).toEqual({
+      name: '冒烟',
+      modelFallbacks: [{ provider: 'p', model: 'm' }],
+    })
+  })
+
   it('renders nothing when there is nothing to store', () => {
     // Clearing both fields removes the file; an empty document would read as
     // an intentional blank name.

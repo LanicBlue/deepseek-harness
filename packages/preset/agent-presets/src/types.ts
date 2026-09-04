@@ -54,6 +54,8 @@ export interface AgentPresetDocument {
   readonly trust: PresetTrust
   /** The composition exactly as stored. */
   readonly content: string
+  /** The metadata file exactly as stored, empty when the preset ships none. */
+  readonly metadata: string
   /** Display name the preset published. */
   readonly name?: string
   /** One sentence on what this preset is for. */

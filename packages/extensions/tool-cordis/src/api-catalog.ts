@@ -189,10 +189,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'read\') async readDocument(agentPreset: string): Promise<AgentPresetDocument>',
-        description: 'One preset\'s composition text with the roster row it belongs to.',
+        description: 'One preset\'s two files with the roster row they belong to: the composition and the raw metadata text.',
         parameters: [{ name: 'agentPreset', description: 'the preset id.' }],
-        returns: 'the composition beside its trust and published metadata.',
+        returns: 'both files\' stored text beside trust and published metadata.',
         throws: ['{RemoteError} `gateway/bad-request` for an empty id, or `agent-preset/not-found` when no configured root supplies it.'],
+      },
+      {
+        signature: '@Remote(\'write\') async writeDocument(agentPreset: string, metadata: string, composition: string): Promise<void>',
+        description: 'Overwrite one user-authored preset\'s metadata and composition files.\n\nBoth documents must parse before anything reaches disk: the metadata as a YAML mapping (or empty), the composition as a list of rows. A `system` preset is refused — shipped compositions are the known-good baseline a copy starts from. The settled standing mount under the id is dropped so the next session composes the edited generation.',
+        parameters: [
+          { name: 'agentPreset', description: 'the user-trust preset to overwrite.' },
+          { name: 'metadata', description: 'the metadata file\'s full next contents.' },
+          { name: 'composition', description: 'the composition file\'s full next contents.' },
+        ],
+        returns: 'once both files are stored.',
+        throws: ['{RemoteError} `gateway/bad-request` for an empty id, `agent-preset/not-found` when no root supplies the id, and `agent-preset/invalid` for a preset the host did not author or documents that do not parse.'],
       },
       {
         signature: 'async copy(from: string, id: string, name?: string): Promise<void>',

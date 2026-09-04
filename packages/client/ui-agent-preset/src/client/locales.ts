@@ -12,7 +12,9 @@ export type AgentPresetSettingsKey =
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
   | 'brokenBadge' | 'brokenNoCopy' | 'switchRefused'
-  | 'composition' | 'cancel' | 'close' | 'retry'
+  | 'composition' | 'compositionFile' | 'metadataFile'
+  | 'edit' | 'save' | 'saving'
+  | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
@@ -59,6 +61,11 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   switchRefused: 'Could not switch to {name}: {reason}',
   copyOf: 'Copied from',
   composition: 'Composition (agent.cordis.yml)',
+  compositionFile: 'agent.cordis.yml',
+  metadataFile: 'preset.yml',
+  edit: 'Edit',
+  save: 'Save',
+  saving: 'Saving…',
   cancel: 'Cancel',
   close: 'Close',
   retry: 'Retry',
@@ -117,6 +124,11 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   switchRefused: '无法切换到「{name}」：{reason}',
   copyOf: '复制自',
   composition: '组装（agent.cordis.yml）',
+  compositionFile: 'agent.cordis.yml',
+  metadataFile: 'preset.yml',
+  edit: '编辑',
+  save: '保存',
+  saving: '正在保存…',
   cancel: '取消',
   close: '关闭',
   retry: '重试',

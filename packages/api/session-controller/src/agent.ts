@@ -3,6 +3,8 @@
 import { mkdir } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { firstUsableCandidate, presetModelCandidates } from '@deepseek-ai/dsh-agent-presets'
+import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type {
   Agent, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
@@ -273,6 +275,9 @@ export class ApiSessionAgentController {
    * @param agent - live Agent that owns the selection.
    * @returns the installed mutable selection reference.
    */
+  /** Authored model chains per composed agent, from the preset each mounted. */
+  private readonly presetChains = new WeakMap<Agent, readonly AgentModelSelection[]>()
+
   selectionFor(agent: Agent): InstalledSelection {
     const installed = this.selections.get(agent)
     if (installed !== undefined) return installed
@@ -284,11 +289,22 @@ export class ApiSessionAgentController {
       ? undefined
       : agentModelSelection(projectionState.pending)
     const defaultModel = this.ctx.agentDefaultModel
+    const presetChainsOf = (owner: Agent): readonly AgentModelSelection[] | undefined =>
+      this.presetChains.get(owner)
+    const llmOf = (): LlmRuntime | undefined => this.ctx.get('llm')
     const selection: InstalledSelection = {
       get current(): AgentModelSelection {
         if (picked !== undefined) return picked
         const loggedHeader = agent.session.requestHeader()
-        if (loggedHeader === undefined) return defaultModel.currentSelection()
+        if (loggedHeader === undefined) {
+          // The session's preset answers before the host-wide default: a
+          // preset that names a model is a closer expression of intent than
+          // a field the whole deployment shares, but only while its provider
+          // route is actually registered.
+          const preset = firstUsableCandidate(presetChainsOf(agent) ?? [], llmOf())
+          if (preset !== undefined) return preset
+          return defaultModel.currentSelection()
+        }
         const logged = loggedHeader.config
         return {
           provider: logged.provider,
@@ -377,12 +393,18 @@ export class ApiSessionAgentController {
   }> {
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) return { setup: (agentCtx) => { this.installSelection(agentCtx) } }
-    const resolvedId = (await presets.resolve(presetId)).id
+    const resolved = await presets.resolve(presetId)
     return {
-      agentPreset: resolvedId,
+      agentPreset: resolved.id,
       setup: async (agentCtx) => {
         this.installSelection(agentCtx)
-        await presets.mount(agentCtx, resolvedId)
+        // The preset's authored model chain, captured before publication so
+        // selectionFor can slot it between the session's logged header and
+        // the host's global default. Registered provider routes only: an
+        // authored provider that is not live must not shadow the default.
+        const agent = agentCtx.agent
+        if (agent !== undefined) this.presetChains.set(agent, presetModelCandidates(resolved))
+        await presets.mount(agentCtx, resolved.id)
       },
     }
   }

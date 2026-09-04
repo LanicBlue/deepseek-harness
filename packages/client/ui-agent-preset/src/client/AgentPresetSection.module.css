@@ -466,3 +466,50 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.viewerTabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.viewerTab {
+  padding: 4px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.viewerTabActive {
+  background: var(--dsw-alias-bg-fill-brand-minor, var(--dsw-alias-bg-layer-2));
+  color: var(--dsw-alias-label-primary);
+}
+
+.editorFields {
+  display: grid;
+  gap: 10px;
+}
+
+.editorField {
+  display: grid;
+  gap: 5px;
+}
+
+.editorText {
+  padding: 10px;
+  min-height: 168px;
+  max-height: min(34vh, 320px);
+  overflow: auto;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+  resize: vertical;
+}

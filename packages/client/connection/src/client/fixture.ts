@@ -1893,10 +1893,22 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
    * constants so the settings editor's save and delete are exercisable: the
    * roster a GUI journey sees after writing is the text it wrote.
    */
-  const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string }>([
-    ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" }],
-    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n" }],
-    ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
+  const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string; metadata: string }>([
+    ['standard', {
+      trust: 'system',
+      content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n",
+      metadata: 'name: Standard\ndescription: The full composition.\n',
+    }],
+    ['minimal', {
+      trust: 'system',
+      content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n",
+      metadata: 'name: Minimal\ndescription: Search only.\n',
+    }],
+    ['my-agent', {
+      trust: 'user',
+      content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n",
+      metadata: 'name: My Agent\n',
+    }],
   ])
   let fixtureDefaultPreset = 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
@@ -2435,7 +2447,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       fixtureDefaultPreset = agentPreset
       return { ok: true, value: agentPreset }
     },
-    read(agentPreset: string): RpcResult<{ agentPreset: string; trust: 'system' | 'user'; content: string }> {
+    read(agentPreset: string): RpcResult<{ agentPreset: string; trust: 'system' | 'user'; content: string; metadata: string }> {
       const preset = fixturePresets.get(agentPreset)
       if (preset === undefined) {
         return {
@@ -2447,7 +2459,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           },
         }
       }
-      return { ok: true, value: { agentPreset, trust: preset.trust, content: preset.content } }
+      return { ok: true, value: { agentPreset, trust: preset.trust, content: preset.content, metadata: preset.metadata } }
     },
     copy(from: string, id: string): RpcResult<void> {
       const source = fixturePresets.get(from)
@@ -2471,7 +2483,43 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           },
         }
       }
-      fixturePresets.set(id, { trust: 'user', content: source.content })
+      fixturePresets.set(id, { trust: 'user', content: source.content, metadata: source.metadata })
+      return { ok: true, value: undefined }
+    },
+    write(agentPreset: string, metadata: string, composition: string): RpcResult<void> {
+      const preset = fixturePresets.get(agentPreset)
+      if (preset === undefined) {
+        return {
+          ok: false,
+          error: {
+            code: 'agent-preset/not-found',
+            message: `unknown agent preset "${agentPreset}"`,
+            details: { agentPreset, available: [...fixturePresets.keys()] },
+          },
+        }
+      }
+      if (preset.trust === 'system') {
+        return {
+          ok: false,
+          error: {
+            code: 'agent-preset/invalid',
+            message: `agent preset "${agentPreset}" ships with the deployment`,
+            details: { agentPreset, reason: 'system-trust' },
+          },
+        }
+      }
+      if (composition.trim() !== '' && !composition.trimStart().startsWith('-')) {
+        return {
+          ok: false,
+          error: {
+            code: 'agent-preset/invalid',
+            message: 'composition must be a YAML list of plugin rows',
+            details: { agentPreset, reason: 'composition-not-a-list' },
+          },
+        }
+      }
+      preset.content = composition
+      preset.metadata = metadata
       return { ok: true, value: undefined }
     },
     deletePreset(id: string): RpcResult<void> {
@@ -3426,6 +3474,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           agentPreset?: string
           from?: string
           id?: string
+          metadata?: string
+          composition?: string
           request?: unknown
           _request?: unknown
         }>
@@ -3462,6 +3512,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'agentPresets/read': return Promise.resolve(presetRemotes.read(args.agentPreset as string))
         case 'agentPresets/copy': return Promise.resolve(presetRemotes.copy(args.from as string, args.id as string))
         case 'agentPresets/deletePreset': return Promise.resolve(presetRemotes.deletePreset(args.id as string))
+        case 'agentPresets/write': return Promise.resolve(presetRemotes.write(
+          args.agentPreset as string,
+          args.metadata === undefined ? '' : args.metadata as string,
+          args.composition === undefined ? '' : args.composition as string,
+        ))
         case 'subagents/list': return Promise.resolve({
           ok: true,
           value: { entries: [], parentAvailable: true },

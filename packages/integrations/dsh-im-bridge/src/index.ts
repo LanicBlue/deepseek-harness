@@ -12,7 +12,6 @@ import z from '@deepseek-ai/schemastery'
 // Type-only: each import resolves the Context service declaration the static
 // inject list names, so this package type-checks without runtime imports.
 import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session'
@@ -28,7 +27,7 @@ import { bridgeSessionId, deliverBrief } from './sessions.ts'
 /** Cordis plugin name. */
 export const name = 'im-bridge'
 /** Services the bridge composes over; the Loader waits for their providers. */
-export const inject = ['agents', 'agentDefaultModel', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
+export const inject = ['agents', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
 
 /** Plugin config: how the bridge reaches `im` and paces its loops. */
 export interface Config {
@@ -80,7 +79,7 @@ interface LoopEntry {
 
 /** The InfiniteMission bridge service (`ctx.imBridge`). */
 export class ImBridge extends Service {
-  static inject = ['agents', 'agentDefaultModel', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
+  static inject = ['agents', 'agentPresets', 'sessionQuery', 'sessions', 'settings', 'workspaceRegistry']
 
   private readonly selfCtx: Context
   private readonly runner: ImRunner

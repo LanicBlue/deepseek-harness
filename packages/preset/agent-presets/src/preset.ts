@@ -1,5 +1,7 @@
 /** Agent-preset vocabulary shared by discovery, mounting, and consumers. */
 
+import type { PresetModelSelection } from './metadata.ts'
+
 /**
  * Where a preset's composition came from. A `system` preset ships with the
  * deployment; a `user` preset was authored locally, by a person or by an
@@ -38,6 +40,16 @@ export interface AgentPreset {
    * preset that sets it.
    */
   readonly im?: boolean
+  /**
+   * Default model for sessions composed from this preset, when its metadata
+   * published one. Applies only when nothing stronger chose first (a UI pick,
+   * the session's logged request header) and only while the provider route is
+   * registered; otherwise {@link modelFallbacks} and then the host's global
+   * default model answer.
+   */
+  readonly model?: PresetModelSelection
+  /** Additional models tried after {@link model}, in order. */
+  readonly modelFallbacks?: readonly PresetModelSelection[]
   /**
    * Why this preset cannot compose a session, absent when it can. A broken
    * preset stays on the roster — hiding it would leave its directory blocking
