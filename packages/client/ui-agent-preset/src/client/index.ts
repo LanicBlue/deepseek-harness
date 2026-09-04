@@ -55,7 +55,7 @@ export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.t
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings',
+  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.llm', 'remote.settings',
 ]
 
 /**

@@ -45,6 +45,15 @@ describe('metadata form round-trips', () => {
     expect(parseMetadataForm('model:\n  provider: p\n  extra: 1\n')).toBeUndefined()
     expect(parseMetadataForm('modelFallbacks: not-a-list\n')).toBeUndefined()
   })
+
+  it('round-trips a freshly added, still-empty selection row', () => {
+    // The editor re-parses the text on every render, so a just-added fallback
+    // (provider/model not filled yet) must not collapse the form back to YAML.
+    const draft = { modelFallbacks: [{ provider: '', model: '' }] }
+    expect(parseMetadataForm(renderMetadataForm(draft))).toEqual(draft)
+    const model = { model: { provider: '', model: '' } }
+    expect(parseMetadataForm(renderMetadataForm(model))).toEqual(model)
+  })
 })
 
 describe('composition form round-trips', () => {

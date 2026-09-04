@@ -114,6 +114,13 @@ async function bench() {
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
+  // The provider list feeds the metadata form's model comboboxes; staged the
+  // same double way as the roster namespace above.
+  const llm = {
+    listProviders: () => Promise.resolve({ ok: true as const, value: [] }),
+  }
+  ctx.provide('remote.llm', llm as never)
+  Object.assign(remote, { llm })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
 }
@@ -179,7 +186,7 @@ describe('ui-agent-preset apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings',
+      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.llm', 'remote.settings',
     ])
   })
 

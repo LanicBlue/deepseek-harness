@@ -60,7 +60,6 @@ function selectionFields(value: unknown): ModelSelectionFields | undefined {
   }
   const { provider, model, reasoningEffort } = record
   if (typeof provider !== 'string' || typeof model !== 'string') return undefined
-  if (provider === '' || model === '') return undefined
   if (reasoningEffort !== undefined && typeof reasoningEffort !== 'string') return undefined
   return {
     provider,

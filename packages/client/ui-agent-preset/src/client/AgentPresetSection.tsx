@@ -462,6 +462,11 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     : viewedRow === undefined ? (state.view?.title ?? state.edit?.id ?? '') : presetDisplayText(viewedRow, t).name
   const [viewerTab, setViewerTab] = useState<'composition' | 'metadata'>('composition')
   const [providers, setProviders] = useState<readonly { id: string; name: string }[]>([])
+  // The read-only viewer's own per-file face. Form-first, like the editor.
+  const [viewForm, setViewForm] = useState<{ metadata: boolean; composition: boolean }>({
+    metadata: true,
+    composition: true,
+  })
   const editing = state.edit !== null
   const currentMetadataText = state.edit?.metadata ?? state.view?.metadata ?? ''
   const currentCompositionText = state.edit?.composition ?? state.view?.content ?? ''
@@ -749,20 +754,21 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                 if (!representable) {
                   return <span className={css.viewerTab} title={t('formUnavailable')}>{t('modeYaml')}</span>
                 }
-                const inForm = viewerTab === 'composition'
-                  ? (editingComposition || !editing)
-                  : (editingMetadata || !editing)
+                const file = viewerTab === 'composition' ? 'composition' : 'metadata'
+                const inForm = editing
+                  ? (file === 'composition' ? editingComposition : editingMetadata)
+                  : viewForm[file]
                 return (
                   <button
                     type="button"
                     className={css.viewerTab}
                     aria-pressed={inForm}
                     onClick={() => {
-                      if (!editing) return
-                      props.setEditMode(
-                        viewerTab === 'composition' ? 'composition' : 'metadata',
-                        inForm ? 'yaml' : 'form',
-                      )
+                      if (editing) {
+                        props.setEditMode(file, inForm ? 'yaml' : 'form')
+                      } else {
+                        setViewForm(current => ({ ...current, [file]: !inForm }))
+                      }
                     }}
                   >
                     {inForm ? t('modeYaml') : t('modeForm')}
@@ -771,7 +777,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
               })()}
             </div>
             {viewerTab === 'composition'
-              ? (compositionForm !== undefined && (editingComposition || !editing)
+              ? (compositionForm !== undefined && (editing ? editingComposition : viewForm.composition)
                 ? (
                   <CompositionFormFields
                     t={t} readOnly={!editing} value={compositionForm}
@@ -779,7 +785,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                   />
                 )
                 : <pre className={css.viewerCode}>{currentCompositionText}</pre>)
-              : (metadataForm !== undefined && (editingMetadata || !editing)
+              : (metadataForm !== undefined && (editing ? editingMetadata : viewForm.metadata)
                 ? (
                   <MetadataFormFields
                     t={t} readOnly={!editing} value={metadataForm} providers={providers}
