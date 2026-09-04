@@ -1,9 +1,35 @@
 import { load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import {
-  type CompositionForm, ENTRY_SCHEMA, formRepresents, parseCompositionForm, parseConfigSnippet,
-  parseMetadataForm, renderCompositionForm, renderConfigSnippet, renderMetadataForm,
+  type CompositionForm, ENTRY_SCHEMA, formRepresents, isJsExprNode, isKeyMap, parseCompositionForm,
+  parseConfigSnippet, parseMetadataForm, renderCompositionForm, renderConfigSnippet, renderMetadataForm,
 } from '../src/client/preset-forms.ts'
+
+describe('value-shape helpers for the per-key widgets', () => {
+  it('isKeyMap accepts plain maps only — arrays, js nodes, scalars, null answer false', () => {
+    expect(isKeyMap({ timeoutMs: 300000 })).toBe(true)
+    expect(isKeyMap([])).toBe(false)
+    expect(isKeyMap({ __jsExpr: 'process.cwd()' })).toBe(false)
+    expect(isKeyMap('text')).toBe(false)
+    expect(isKeyMap(300000)).toBe(false)
+    expect(isKeyMap(null)).toBe(false)
+    expect(isKeyMap(undefined)).toBe(false)
+  })
+
+  it('isJsExprNode accepts a single-key __jsExpr node only', () => {
+    expect(isJsExprNode({ __jsExpr: 'process.platform === "win32"' })).toBe(true)
+    expect(isJsExprNode({ __jsExpr: 'x', extra: 1 })).toBe(false)
+    expect(isJsExprNode({ __jsExpr: 3 })).toBe(false)
+    expect(isJsExprNode(null)).toBe(false)
+  })
+
+  it('a !!js config value survives the snippet pipeline as an expression node', () => {
+    const parsed = parseConfigSnippet('cwd: !!js process.env.DSH_CWD ?? process.cwd()')
+    expect(isKeyMap(parsed)).toBe(true)
+    expect(isJsExprNode((parsed as Record<string, unknown>).cwd)).toBe(true)
+    expect(renderConfigSnippet(parsed)).toContain('cwd: !!js process.env.DSH_CWD ?? process.cwd()')
+  })
+})
 
 describe('metadata form round-trips', () => {
   it('parses the full shape and renders it back losslessly', () => {

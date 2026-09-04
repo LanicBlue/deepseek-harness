@@ -390,7 +390,7 @@
 }
 
 .dialog {
-  width: min(560px, 100%);
+  width: min(640px, 100%);
 }
 
 .dialogFields {
@@ -550,17 +550,6 @@
   white-space: nowrap;
 }
 
-.groupLabel {
-  font-weight: 600;
-  cursor: pointer;
-  align-self: center;
-  font-size: 11px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-}
-
 .rowCard {
   display: grid;
   gap: 8px;
@@ -570,33 +559,134 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
-/* One row's header line on a shared column grid: tools, id, package, gate.
-   The same fractions on every row (plain, group header, child) keep the
-   columns reading as columns instead of a per-row wrap pile. */
-.rowHead {
+/* One line per row under one set of column headers: chevron, enabled, id,
+   package, tools. The same fixed tracks on the header, plain, and group lines
+   keep the columns reading as columns; the tools track collapses to zero in
+   the read-only viewer, so the two modes differ by that gutter and nothing
+   else. */
+.rowLine,
+.rowGroupHead,
+.rowColHead {
   display: grid;
-  grid-template-columns: auto minmax(80px, 1fr) minmax(140px, 1.7fr) minmax(18px, auto);
+  grid-template-columns: 14px 34px minmax(64px, 1fr) minmax(120px, 1.6fr) 0;
   gap: 8px;
-  align-items: end;
+  align-items: center;
 }
 
-.rowField {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+.rowListEdit .rowLine,
+.rowListEdit .rowGroupHead,
+.rowListEdit .rowColHead {
+  grid-template-columns: 14px 34px minmax(64px, 1fr) minmax(120px, 1.6fr) 76px;
 }
 
-.rowField .input {
-  width: 100%;
-  min-width: 0;
+/* Escape the card's side padding: the header, the top-level rows, and the
+   group headers all share one left edge, so the columns read as one table.
+   Group children keep the body rail's constant indent — a block shift, not
+   per-row drift. */
+.rowLine {
+  margin: 0 -10px;
 }
 
-.rowLabel {
+.rowColHead {
+  padding: 0 2px;
   font-size: 11px;
   font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.chev {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+  transform: rotate(0deg);
+  transition: transform .12s;
+}
+
+.rowGroup[open] .chev {
+  transform: rotate(90deg);
+}
+
+.chevSpacer {
+  width: 10px;
+}
+
+.gateCheck {
+  justify-self: center;
+  margin: 0;
+}
+
+/* A `!!js` gate in the enabled column: a quiet chip; the expression itself
+   edits on the full-width line under the row's own line. */
+.gateChip {
+  justify-self: center;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
   white-space: nowrap;
+}
+
+/* The group's package slot is a constant in practice (`cordis:group`); it
+   reads as a chip rather than an input. */
+.groupChip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+}
+
+/* The compact cell inputs of the row lines and key grids. */
+.cellInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.cellInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.cellArea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  resize: vertical;
+}
+
+.cellStack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .inputMono {
@@ -604,25 +694,60 @@
   font-size: 12.5px;
 }
 
-/* The boolean gate reads as the header's last column: label above, checkbox
-   set on the inputs' base line. */
-.rowGateBool {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* A config (or isolate) key map: a small heading, then one line per key. */
+.keyBlock {
+  display: grid;
+  gap: 6px;
 }
 
-.rowGateBool input {
-  margin: 0 0 11px 0;
+.keyHeading {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
 }
 
-/* A `!!js` expression gate is too wide for a header column; it takes its own
-   full-width line under the header, badge first. */
-.rowJsGate {
+.keyRows,
+.keyAdd {
+  display: grid;
+  grid-template-columns: minmax(90px, 150px) minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.keyName {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyAdd > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.rowTools {
+  display: inline-flex;
+  gap: 2px;
+  width: 76px;
+  justify-content: flex-end;
+}
+
+/* A labelled YAML snippet inside a row — the fallback for a config that is
+   not a key map. */
+.rowSnippet {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+.rowSnippet .editorText {
+  min-height: 40px;
 }
 
 .gateLine {
@@ -632,7 +757,7 @@
   min-width: 0;
 }
 
-.gateLine .input {
+.gateLine .cellInput {
   flex: 1;
   min-width: 0;
 }
@@ -648,27 +773,9 @@
   font-size: 11px;
 }
 
-.rowTools {
-  display: inline-flex;
-  gap: 2px;
-  align-self: flex-end;
-}
-
-/* A labelled YAML snippet inside a row (config, isolate). */
-.rowSnippet {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.rowSnippet .editorText {
-  min-height: 40px;
-}
-
-/* Group rows: the card becomes the group container; the fold header edits
-   the group's own fields (id/package/gate — its config IS the child list),
-   and the body nests child cards behind a left rail. */
+/* Group rows: the card becomes the group container; the fold header is the
+   group's own row line (its config IS the child list), and the body nests
+   child cards behind a left rail. */
 .rowGroupCard {
   padding: 0;
   background: var(--dsw-alias-bg-layer-2);
@@ -679,12 +786,7 @@
 }
 
 .rowGroupHead {
-  /* The group badge takes the leading column; the rest shares the row grid. */
-  display: grid;
-  grid-template-columns: auto auto minmax(80px, 1fr) minmax(140px, 1.7fr) minmax(18px, auto);
-  gap: 8px;
-  align-items: end;
-  padding: 10px 10px 0;
+  padding: 8px 0 0;
   cursor: pointer;
   list-style: none;
 }

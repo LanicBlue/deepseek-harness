@@ -19,9 +19,12 @@ export type AgentPresetSettingsKey =
   | 'providerLabel' | 'modelLabel' | 'effortLabel'
   | 'modelDefault' | 'modelUnset' | 'modelAdd' | 'modelRemove'
   | 'modelFallbacks' | 'fallbackAdd' | 'fallbackRemove'
-  | 'rowId' | 'rowName' | 'rowConfig' | 'rowDisabled'
+  | 'rowId' | 'rowName' | 'rowConfig'
+  | 'rowHeadEnabled' | 'rowHeadId' | 'rowHeadPackage'
+  | 'configKeysLabel' | 'isolateKeysLabel'
+  | 'keyRemove' | 'keyAdd' | 'keyNamePlaceholder' | 'keyValuePlaceholder' | 'keyExists'
   | 'rowAdd' | 'rowAddChild' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
-  | 'rowGroup' | 'rowIsolate' | 'jsExpressionGate'
+  | 'rowGroup' | 'jsExpressionGate'
   | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
@@ -94,11 +97,19 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   rowId: 'Row id',
   rowName: 'Plugin package',
   rowConfig: 'Config (YAML)',
-  rowDisabled: 'Disabled',
+  rowHeadEnabled: 'On',
+  rowHeadId: 'Identifier',
+  rowHeadPackage: 'Plugin package',
+  configKeysLabel: 'Config',
+  isolateKeysLabel: 'isolate',
+  keyRemove: 'Remove this key',
+  keyAdd: '＋ config key',
+  keyNamePlaceholder: 'key',
+  keyValuePlaceholder: 'value (YAML)',
+  keyExists: 'This key already exists.',
   rowAdd: '＋ plugin row',
   rowAddChild: '＋ child row',
   rowGroup: 'group',
-  rowIsolate: 'isolate (YAML)',
   jsExpressionGate: 'JS gate:',
   rowRemove: 'Remove row',
   rowUp: 'Move up',
@@ -187,11 +198,19 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   rowId: '行 id',
   rowName: '插件包名',
   rowConfig: '配置（YAML）',
-  rowDisabled: '禁用',
+  rowHeadEnabled: '使用',
+  rowHeadId: '标识',
+  rowHeadPackage: '插件包',
+  configKeysLabel: '配置',
+  isolateKeysLabel: 'isolate',
+  keyRemove: '移除该键',
+  keyAdd: '＋ 配置键',
+  keyNamePlaceholder: '键名',
+  keyValuePlaceholder: '值（YAML）',
+  keyExists: '该键已存在。',
   rowAdd: '＋ 插件行',
   rowAddChild: '＋ 子行',
   rowGroup: '分组',
-  rowIsolate: 'isolate（YAML）',
   jsExpressionGate: 'JS 门：',
   rowRemove: '移除该行',
   rowUp: '上移',

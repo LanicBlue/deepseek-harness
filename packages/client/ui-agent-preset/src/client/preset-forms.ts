@@ -15,7 +15,7 @@
 import { load, dump, JSON_SCHEMA, Type } from 'js-yaml'
 
 /** Whether a value is an inlined `!!js` expression node. */
-function isJsExprNode(data: unknown): data is { __jsExpr: string } {
+export function isJsExprNode(data: unknown): data is { __jsExpr: string } {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return false
   const record = data as { __jsExpr?: unknown }
   const keys = Object.keys(record)
@@ -39,6 +39,15 @@ const JS_EXPR = new Type('tag:yaml.org,2002:js', {
 
 /** The composition dialect: JSON values plus `!!js` expression scalars. */
 export const ENTRY_SCHEMA = JSON_SCHEMA.extend(JS_EXPR)
+
+/**
+ * Whether a stored value is a plain key map the per-key widgets can edit.
+ * Arrays, scalars, and `!!js` nodes answer false — those render through the
+ * whole-snippet YAML editor instead.
+ */
+export function isKeyMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !isJsExprNode(value)
+}
 
 /** One provider/model/effort answer, as the metadata file stores it. */
 export interface ModelSelectionFields {

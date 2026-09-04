@@ -10,7 +10,7 @@
  * mounted once at session creation and nothing re-reads the file.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
@@ -19,7 +19,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import {
-  parseCompositionForm, parseMetadataForm, parseConfigSnippet, renderConfigSnippet,
+  isJsExprNode, isKeyMap, parseCompositionForm, parseMetadataForm, parseConfigSnippet, renderConfigSnippet,
   type CompositionForm, type MetadataForm, type ModelSelectionFields, type RowFields,
 } from './preset-forms.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
@@ -384,7 +384,7 @@ function SnippetField({ label, value, error, readOnly, t, onChange, onCommit }: 
 }): ReactNode {
   return (
     <label className={css.rowSnippet}>
-      <span className={css.rowLabel}>{label}</span>
+      <span className={css.keyHeading}>{label}</span>
       <textarea
         className={error ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
         style={{ minHeight: 40 }}
@@ -402,46 +402,249 @@ function SnippetField({ label, value, error, readOnly, t, onChange, onCommit }: 
   )
 }
 
-/** A row header's boolean disabled gate, checkbox under its own label. */
-function RowBoolGate({ row, readOnly, t, onChange }: {
+/** The enabled cell of a row line: a checkbox, or a `!!js` chip when the
+   gate is an expression (the expression itself edits on the line below). */
+function GateCell({ row, readOnly, t, onChange }: {
   row: RowFields
   readOnly: boolean
   t: (key: AgentPresetSettingsKey) => string
   onChange: (next: RowFields) => void
 }): ReactNode {
-  if (typeof row.disabled === 'object') return null
+  if (typeof row.disabled === 'object') {
+    return (
+      <span
+        className={css.gateChip}
+        title={`${t('jsExpressionGate')} ${row.disabled.js}`}
+        aria-label={`${t('jsExpressionGate')}${row.id === '' ? '' : `: ${row.id}`}`}
+      >!!js</span>
+    )
+  }
   return (
-    <div className={css.rowGateBool}>
-      <span className={css.rowLabel}>{t('rowDisabled')}</span>
-      <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
-        onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
-    </div>
+    <input
+      type="checkbox"
+      className={css.gateCheck}
+      checked={row.disabled !== true}
+      disabled={readOnly}
+      aria-label={`${t('rowHeadEnabled')}${row.id === '' ? '' : `: ${row.id}`}`}
+      onChange={(event) => {
+        if (!event.target.checked) {
+          onChange({ ...row, disabled: true })
+          return
+        }
+        const cleared: RowFields = { ...row }
+        delete cleared.disabled
+        onChange(cleared)
+      }}
+    />
   )
 }
 
-/** A `!!js` expression gate: its own full-width line under the row header. */
-function RowJsGate({ row, readOnly, t, onChange }: {
-  row: RowFields
+/** One config value as the control its own type reads as: booleans are
+   checkboxes, numbers number inputs, short strings text inputs, long strings
+   textareas, `!!js` nodes expression inputs — anything else stays YAML. */
+function ConfigValueCell({ name, value, readOnly, t, onChange }: {
+  /** The key this value sits under; the control's accessible name. */
+  name: string
+  value: unknown
   readOnly: boolean
   t: (key: AgentPresetSettingsKey) => string
-  onChange: (next: RowFields) => void
+  onChange: (next: unknown) => void
 }): ReactNode {
-  if (typeof row.disabled !== 'object') return null
-  return (
-    <div className={css.rowJsGate}>
-      <span className={css.rowLabel}>{t('jsExpressionGate')}</span>
+  if (typeof value === 'boolean') {
+    return (
+      <input
+        type="checkbox"
+        className={css.gateCheck}
+        checked={value}
+        disabled={readOnly}
+        aria-label={name}
+        onChange={(event) => { onChange(event.target.checked) }}
+      />
+    )
+  }
+  if (typeof value === 'number') {
+    return (
+      <input
+        type="number"
+        className={`${css.cellInput} ${css.inputMono}`}
+        value={value}
+        readOnly={readOnly}
+        spellCheck={false}
+        aria-label={name}
+        onChange={(event) => {
+          const parsed = Number(event.target.value)
+          if (event.target.value !== '' && Number.isFinite(parsed)) onChange(parsed)
+        }}
+      />
+    )
+  }
+  if (typeof value === 'string') {
+    const onText = (event: { target: { value: string } }): void => { onChange(event.target.value) }
+    return value.includes('\n') || value.length > 72 ? (
+      <textarea className={css.cellArea} value={value} readOnly={readOnly} spellCheck={false}
+        aria-label={name} onChange={onText} />
+    ) : (
+      <input className={css.cellInput} value={value} readOnly={readOnly} spellCheck={false}
+        aria-label={name} onChange={onText} />
+    )
+  }
+  if (isJsExprNode(value)) {
+    return (
       <span className={css.gateLine}>
-        <code className={css.jsBadge} aria-hidden>!!js</code>
-        <input className={`${css.input} ${css.inputMono}`} value={row.disabled.js} readOnly={readOnly} spellCheck={false}
-          aria-label={t('jsExpressionGate')}
-          onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }} />
+        <code className={css.jsBadge} aria-hidden="true">!!js</code>
+        <input
+          className={`${css.cellInput} ${css.inputMono}`}
+          value={value.__jsExpr}
+          readOnly={readOnly}
+          spellCheck={false}
+          aria-label={name}
+          onChange={(event) => { onChange({ __jsExpr: event.target.value }) }}
+        />
       </span>
+    )
+  }
+  return <YamlCell name={name} value={value} readOnly={readOnly} t={t} onChange={onChange} />
+}
+
+/** One object/array config value as a blur-committed YAML mini editor. */
+function YamlCell({ name, value, readOnly, t, onChange }: {
+  name: string
+  value: unknown
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (next: unknown) => void
+}): ReactNode {
+  const [text, setText] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+  return (
+    <span className={css.cellStack}>
+      <textarea
+        className={error ? `${css.cellArea} ${css.editorTextInvalid}` : css.cellArea}
+        value={text ?? renderConfigSnippet(value)}
+        readOnly={readOnly}
+        spellCheck={false}
+        placeholder="YAML"
+        aria-label={name}
+        onChange={(event) => { setText(event.target.value); setError(false) }}
+        onBlur={() => {
+          if (text === null) return
+          try {
+            onChange(parseConfigSnippet(text))
+            setText(null)
+            setError(false)
+          } catch {
+            setError(true)
+          }
+        }}
+      />
+      {error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+    </span>
+  )
+}
+
+/** A config (or isolate) key map as one control line per key. */
+function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
+  heading: string
+  record: Record<string, unknown>
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onPatch: (next: unknown) => void
+}): ReactNode {
+  const keys = Object.keys(record)
+  if (keys.length === 0 && readOnly) return null
+  const setKey = (key: string, value: unknown): void => { onPatch({ ...record, [key]: value }) }
+  const dropKey = (key: string): void => {
+    const rest: Record<string, unknown> = {}
+    for (const current of keys) {
+      if (current !== key) rest[current] = record[current]
+    }
+    onPatch(rest)
+  }
+  return (
+    <div className={css.keyBlock}>
+      <span className={css.keyHeading}>{heading}</span>
+      <div className={css.keyRows}>
+        {keys.map(key => (
+          <Fragment key={key}>
+            <span className={css.keyName} title={key}>{key}</span>
+            <ConfigValueCell name={key} value={record[key]} readOnly={readOnly} t={t} onChange={(value) => { setKey(key, value) }} />
+            {!readOnly ? (
+              <button
+                type="button"
+                className={`${css.iconButton} ${css.iconDanger}`}
+                aria-label={`${t('keyRemove')}: ${key}`}
+                onClick={() => { dropKey(key) }}
+              >✕</button>
+            ) : null}
+          </Fragment>
+        ))}
+      </div>
+      {!readOnly ? (
+        <AddKeyRow t={t} isTaken={key => key in record} onAdd={(key, value) => { setKey(key, value) }} />
+      ) : null}
     </div>
   )
 }
 
-/** One row's ordering tools; the read-only viewer keeps the column as an
-   empty placeholder so the header grid does not shift between modes. */
+/** The inline "add one config key" line: a key, a YAML value, and ＋. */
+function AddKeyRow({ t, isTaken, onAdd }: {
+  t: (key: AgentPresetSettingsKey) => string
+  isTaken: (key: string) => boolean
+  onAdd: (key: string, value: unknown) => void
+}): ReactNode {
+  const [key, setKey] = useState('')
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<null | 'yaml' | 'taken'>(null)
+  const commit = (): void => {
+    if (key === '') return
+    if (isTaken(key)) {
+      setError('taken')
+      return
+    }
+    try {
+      onAdd(key, value.trim() === '' ? '' : parseConfigSnippet(value))
+      setKey('')
+      setValue('')
+      setError(null)
+    } catch {
+      setError('yaml')
+    }
+  }
+  const commitOnEnter = (event: { key: string }): void => {
+    if (event.key === 'Enter') commit()
+  }
+  return (
+    <div className={css.keyAdd}>
+      <input
+        className={`${css.cellInput} ${css.inputMono}`}
+        value={key}
+        spellCheck={false}
+        placeholder={t('keyNamePlaceholder')}
+        aria-label={t('keyNamePlaceholder')}
+        onChange={(event) => { setKey(event.target.value); setError(null) }}
+        onKeyDown={commitOnEnter}
+      />
+      <input
+        className={`${css.cellInput} ${css.inputMono}`}
+        value={value}
+        spellCheck={false}
+        placeholder={t('keyValuePlaceholder')}
+        aria-label={t('keyValuePlaceholder')}
+        onChange={(event) => { setValue(event.target.value); setError(null) }}
+        onKeyDown={commitOnEnter}
+      />
+      <button type="button" className={css.iconButton} aria-label={t('keyAdd')} title={t('keyAdd')}
+        onClick={() => { commit() }}
+      >＋</button>
+      {error === null ? null : (
+        <p className={css.error} role="alert">{error === 'taken' ? t('keyExists') : t('configInvalid')}</p>
+      )}
+    </div>
+  )
+}
+
+/** One row's ordering tools; the read-only viewer keeps the column empty so
+   the shared line grid does not shift between modes. */
 function RowTools({ index, total, t, onRemove, onMove, placeholder }: {
   index: number
   total: number
@@ -450,7 +653,7 @@ function RowTools({ index, total, t, onRemove, onMove, placeholder }: {
   onMove: (delta: number) => void
   placeholder?: boolean
 }): ReactNode {
-  if (placeholder === true) return <span className={css.rowTools} aria-hidden="true" />
+  if (placeholder === true) return <span aria-hidden="true" />
   return (
     <span className={css.rowTools}>
       <button type="button" className={css.iconButton} disabled={index === 0}
@@ -463,7 +666,7 @@ function RowTools({ index, total, t, onRemove, onMove, placeholder }: {
   )
 }
 
-function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
+function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove, packageListId }: {
   row: RowFields
   index: number
   total: number
@@ -472,48 +675,102 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
   onChange: (next: RowFields) => void
   onRemove: () => void
   onMove: (delta: number) => void
+  /** The shared datalist of package names already used in this composition. */
+  packageListId: string | undefined
 }): ReactNode {
-  const config = useSnippetField(row, 'config', onChange)
-  const isolate = useSnippetField(row, 'isolate', onChange)
+  const configSnippet = useSnippetField(row, 'config', onChange)
+  const isolateSnippet = useSnippetField(row, 'isolate', onChange)
   return (
     <div className={css.rowCard}>
-      <div className={css.rowHead}>
+      <div className={css.rowLine}>
+        <span className={css.chevSpacer} aria-hidden="true" />
+        <GateCell row={row} readOnly={readOnly} t={t} onChange={onChange} />
+        <input
+          className={`${css.cellInput} ${css.inputMono}`}
+          value={row.id}
+          readOnly={readOnly}
+          spellCheck={false}
+          placeholder={t('rowId')}
+          aria-label={`${t('rowHeadId')} ${index + 1}`}
+          onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
+        />
+        <input
+          className={`${css.cellInput} ${css.inputMono}`}
+          value={row.name}
+          readOnly={readOnly}
+          spellCheck={false}
+          placeholder={t('rowName')}
+          aria-label={`${t('rowHeadPackage')} ${index + 1}`}
+          list={packageListId}
+          onChange={(event) => { onChange({ ...row, name: event.target.value }) }}
+        />
         <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
-        <label className={`${css.rowField}`}>
-          <span className={css.rowLabel}>{t('rowId')}</span>
-          <input className={`${css.input} ${css.inputMono}`} value={row.id} readOnly={readOnly} spellCheck={false}
-            aria-label={`${t('rowId')} ${index + 1}`}
-            onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
-        </label>
-        <label className={`${css.rowField}`}>
-          <span className={css.rowLabel}>{t('rowName')}</span>
-          <input className={`${css.input} ${css.inputMono}`} value={row.name} readOnly={readOnly} spellCheck={false}
-            aria-label={`${t('rowName')} ${index + 1}`}
-            onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
-        </label>
-        <RowBoolGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
       </div>
-      <RowJsGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
+      {typeof row.disabled === 'object' ? (
+        <div className={css.gateLine}>
+          <code className={css.jsBadge} aria-hidden="true">!!js</code>
+          <input
+            className={`${css.cellInput} ${css.inputMono}`}
+            value={row.disabled.js}
+            readOnly={readOnly}
+            spellCheck={false}
+            aria-label={t('jsExpressionGate')}
+            onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
+          />
+        </div>
+      ) : null}
       {row.group === undefined ? (
-        <SnippetField
-          label={t('rowConfig')} value={config.shown} error={config.error} readOnly={readOnly} t={t}
-          onChange={config.setText} onCommit={config.commit}
-        />
+        isKeyMap(row.config) ? (
+          <KeyValueFields
+            heading={t('configKeysLabel')}
+            record={row.config}
+            readOnly={readOnly}
+            t={t}
+            onPatch={(next) => { onChange({ ...row, config: next }) }}
+          />
+        ) : row.config === undefined ? (
+          readOnly ? null : (
+            <KeyValueFields
+              heading={t('configKeysLabel')}
+              record={{}}
+              readOnly={readOnly}
+              t={t}
+              onPatch={(next) => { onChange({ ...row, config: next }) }}
+            />
+          )
+        ) : (
+          <>
+            <SnippetField
+              label={t('configKeysLabel')} value={configSnippet.shown} error={configSnippet.error} readOnly={readOnly} t={t}
+              onChange={configSnippet.setText} onCommit={configSnippet.commit}
+            />
+            {configSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+          </>
+        )
       ) : null}
-      {row.isolate !== undefined || isolate.editing ? (
-        <SnippetField
-          label={t('rowIsolate')} value={isolate.shown} error={isolate.error} readOnly={readOnly} t={t}
-          onChange={isolate.setText} onCommit={isolate.commit}
+      {isKeyMap(row.isolate) ? (
+        <KeyValueFields
+          heading={t('isolateKeysLabel')}
+          record={row.isolate}
+          readOnly={readOnly}
+          t={t}
+          onPatch={(next) => { onChange({ ...row, isolate: next }) }}
         />
-      ) : null}
-      {config.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
-      {isolate.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+      ) : row.isolate === undefined ? null : (
+        <>
+          <SnippetField
+            label={t('isolateKeysLabel')} value={isolateSnippet.shown} error={isolateSnippet.error} readOnly={readOnly} t={t}
+            onChange={isolateSnippet.setText} onCommit={isolateSnippet.commit}
+          />
+          {isolateSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+        </>
+      )}
     </div>
   )
 }
 
 /** One group row: the fold header edits the group's own fields, the body holds child rows. */
-function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
+function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove, packageListId }: {
   row: RowFields
   index: number
   total: number
@@ -522,8 +779,9 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
   onChange: (next: RowFields) => void
   onRemove: () => void
   onMove: (delta: number) => void
+  packageListId: string | undefined
 }): ReactNode {
-  const isolate = useSnippetField(row, 'isolate', onChange)
+  const isolateSnippet = useSnippetField(row, 'isolate', onChange)
   const patchChild = (childIndex: number, next: RowFields): void => {
     const children = (row.children ?? []).map((current, i) => i === childIndex ? next : current)
     onChange({ ...row, children })
@@ -540,38 +798,58 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
   return (
     <div className={`${css.rowCard} ${css.rowGroupCard}`}>
       <details open className={css.rowGroup}>
-        {/* The header IS the group's own row editor: clicks on its inputs must fold nothing. */}
+        {/* The header IS the group's own row line: clicks on its inputs must fold nothing. */}
         <summary
           className={css.rowGroupHead}
           onClick={(event) => {
             if ((event.target as HTMLElement).closest('input, textarea, button') !== null) event.preventDefault()
           }}
         >
-          <span className={css.groupLabel} aria-hidden>{t('rowGroup')}</span>
+          <span className={css.chev} aria-hidden="true">▸</span>
+          <GateCell row={row} readOnly={readOnly} t={t} onChange={onChange} />
+          <input
+            className={`${css.cellInput} ${css.inputMono}`}
+            value={row.id}
+            readOnly={readOnly}
+            spellCheck={false}
+            placeholder={t('rowId')}
+            aria-label={`${t('rowGroup')} ${index + 1}`}
+            onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
+          />
+          <span className={css.groupChip} title={row.name}>{row.name}</span>
           <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
-          <label className={`${css.rowField}`}>
-            <span className={css.rowLabel}>{t('rowId')}</span>
-            <input className={`${css.input} ${css.inputMono}`} value={row.id} readOnly={readOnly} spellCheck={false}
-              aria-label={`${t('rowId')} ${index + 1}`}
-              onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
-          </label>
-          <label className={`${css.rowField}`}>
-            <span className={css.rowLabel}>{t('rowName')}</span>
-            <input className={`${css.input} ${css.inputMono}`} value={row.name} readOnly={readOnly} spellCheck={false}
-              aria-label={`${t('rowName')} ${index + 1}`}
-              onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
-          </label>
-          <RowBoolGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
         </summary>
         <div className={css.rowGroupBody}>
-          <RowJsGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
-          {row.isolate !== undefined || isolate.editing ? (
-            <SnippetField
-              label={t('rowIsolate')} value={isolate.shown} error={isolate.error} readOnly={readOnly} t={t}
-              onChange={isolate.setText} onCommit={isolate.commit}
-            />
+          {typeof row.disabled === 'object' ? (
+            <div className={css.gateLine}>
+              <code className={css.jsBadge} aria-hidden="true">!!js</code>
+              <input
+                className={`${css.cellInput} ${css.inputMono}`}
+                value={row.disabled.js}
+                readOnly={readOnly}
+                spellCheck={false}
+                aria-label={t('jsExpressionGate')}
+                onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
+              />
+            </div>
           ) : null}
-          {isolate.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+          {isKeyMap(row.isolate) ? (
+            <KeyValueFields
+              heading={t('isolateKeysLabel')}
+              record={row.isolate}
+              readOnly={readOnly}
+              t={t}
+              onPatch={(next) => { onChange({ ...row, isolate: next }) }}
+            />
+          ) : row.isolate === undefined ? null : (
+            <>
+              <SnippetField
+                label={t('isolateKeysLabel')} value={isolateSnippet.shown} error={isolateSnippet.error} readOnly={readOnly} t={t}
+                onChange={isolateSnippet.setText} onCommit={isolateSnippet.commit}
+              />
+              {isolateSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+            </>
+          )}
           {(row.children ?? []).map((child, childIndex) => (
             <RowFieldsInput
               key={childIndex}
@@ -580,6 +858,7 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
               total={(row.children ?? []).length}
               readOnly={readOnly}
               t={t}
+              packageListId={packageListId}
               onChange={(next) => { patchChild(childIndex, next) }}
               onRemove={() => {
                 const children = (row.children ?? []).filter((_, i) => i !== childIndex)
@@ -600,7 +879,19 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
   )
 }
 
-/** The agent.cordis.yml fields: plugin rows and collapsible group rows. */
+/** The shared datalist of package names this composition already uses. */
+const PACKAGE_DATALIST_ID = 'dsh-agent-preset-package-list'
+
+/** Collect the distinct plugin package names a composition references. */
+function collectPackageNames(rows: RowFields[], into: Set<string>): void {
+  for (const row of rows) {
+    if (row.name !== '' && row.name !== 'cordis:group') into.add(row.name)
+    if (row.children !== undefined) collectPackageNames(row.children, into)
+  }
+}
+
+/** The agent.cordis.yml fields: one line per plugin row under a single set of
+   column headers, each row's config as per-key controls of its value types. */
 function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFieldsProps & {
   value: CompositionForm
 }): ReactNode {
@@ -617,8 +908,20 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
     if (moved !== undefined) next.splice(target, 0, moved)
     return next
   }
+  const packageNames = new Set<string>()
+  collectPackageNames(rows, packageNames)
   return (
-    <div className={css.editorFields}>
+    <div className={`${css.editorFields} ${readOnly ? css.rowListRead : css.rowListEdit}`}>
+      <datalist id={PACKAGE_DATALIST_ID}>
+        {Array.from(packageNames, name => <option key={name} value={name} />)}
+      </datalist>
+      <div className={css.rowColHead} aria-hidden="true">
+        <span />
+        <span>{t('rowHeadEnabled')}</span>
+        <span>{t('rowHeadId')}</span>
+        <span>{t('rowHeadPackage')}</span>
+        <span />
+      </div>
       {rows.map((row, index) => row.group === true ? (
         <GroupRowFieldsInput
           key={index}
@@ -627,6 +930,7 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
           total={rows.length}
           readOnly={readOnly}
           t={t}
+          packageListId={PACKAGE_DATALIST_ID}
           onChange={(next) => { patchRow(index, next) }}
           onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
           onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
@@ -639,6 +943,7 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
           total={rows.length}
           readOnly={readOnly}
           t={t}
+          packageListId={PACKAGE_DATALIST_ID}
           onChange={(next) => { patchRow(index, next) }}
           onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
           onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
