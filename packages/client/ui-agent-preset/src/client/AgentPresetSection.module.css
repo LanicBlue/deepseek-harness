@@ -694,13 +694,21 @@
   font-size: 12.5px;
 }
 
-/* A config (or isolate) key map: a small heading, then one line per key. */
+/* A config (or isolate) key map: a small heading, then one line per key.
+   The block bleeds out of the card's side padding so its key column sits
+   exactly under the row lines' identifier column and its value column under
+   the package column — one table, not two layouts. */
 .keyBlock {
   display: grid;
   gap: 6px;
 }
 
+.rowCard > .keyBlock {
+  margin: 0 -10px;
+}
+
 .keyHeading {
+  padding-left: 64px;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: .04em;
@@ -708,15 +716,29 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.keyRows,
+/* Every key line shares the row-line template: two empty leading tracks keep
+   the key under 标识 and the control under 插件包; each row is its own grid,
+   so a missing remove button in the read-only viewer cannot shift anything. */
+.keyRow,
 .keyAdd {
   display: grid;
-  grid-template-columns: minmax(90px, 150px) minmax(0, 1fr) auto;
-  gap: 6px 10px;
+  grid-template-columns: 14px 34px minmax(64px, 1fr) minmax(120px, 1.6fr) 0;
+  gap: 8px;
   align-items: center;
 }
 
+.rowListEdit .keyRow,
+.rowListEdit .keyAdd {
+  grid-template-columns: 14px 34px minmax(64px, 1fr) minmax(120px, 1.6fr) 76px;
+}
+
+.keyRows {
+  display: grid;
+  gap: 6px;
+}
+
 .keyName {
+  grid-column: 3;
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
@@ -725,8 +747,35 @@
   white-space: nowrap;
 }
 
+/* The control column: the package column exactly, so values end where the
+   package inputs above end — never under the remove button. */
+.keyValue {
+  grid-column: 4;
+  display: grid;
+  min-width: 0;
+}
+
+.keyValue .gateCheck {
+  justify-self: start;
+}
+
+/* Remove (per key) and ＋ (add row) sit in the tools track; the add row's
+   two inputs take the key and value columns. */
+.keyCell {
+  grid-column: 5;
+  justify-self: end;
+}
+
+.keyColName {
+  grid-column: 3;
+}
+
+.keyColValue {
+  grid-column: 4;
+}
+
 .keyAdd > p {
-  grid-column: 1 / -1;
+  grid-column: 3 / -1;
   margin: 0;
 }
 
@@ -760,6 +809,20 @@
 .gateLine .cellInput {
   flex: 1;
   min-width: 0;
+}
+
+/* A row's own !!js gate line bleeds to the card edges like the row line, and
+   the badge fills the chevron+gate gutter (58px + 6px gap = the 64px leading
+   tracks), so the expression starts exactly at the identifier column. */
+.rowCard > .gateLine {
+  margin: 0 -10px;
+}
+
+.rowCard > .gateLine > .jsBadge {
+  flex: none;
+  width: 58px;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .jsBadge {

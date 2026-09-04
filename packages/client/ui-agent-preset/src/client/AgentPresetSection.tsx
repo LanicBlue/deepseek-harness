@@ -10,7 +10,7 @@
  * mounted once at session creation and nothing re-reads the file.
  */
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
@@ -542,7 +542,9 @@ function YamlCell({ name, value, readOnly, t, onChange }: {
   )
 }
 
-/** A config (or isolate) key map as one control line per key. */
+/** A config (or isolate) key map as one control line per key: the key sits
+   in the identifier column, its control in the package column — the same two
+   columns the row lines above use. */
 function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
   heading: string
   record: Record<string, unknown>
@@ -565,18 +567,20 @@ function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
       <span className={css.keyHeading}>{heading}</span>
       <div className={css.keyRows}>
         {keys.map(key => (
-          <Fragment key={key}>
+          <div key={key} className={css.keyRow}>
             <span className={css.keyName} title={key}>{key}</span>
-            <ConfigValueCell name={key} value={record[key]} readOnly={readOnly} t={t} onChange={(value) => { setKey(key, value) }} />
+            <span className={css.keyValue}>
+              <ConfigValueCell name={key} value={record[key]} readOnly={readOnly} t={t} onChange={(value) => { setKey(key, value) }} />
+            </span>
             {!readOnly ? (
               <button
                 type="button"
-                className={`${css.iconButton} ${css.iconDanger}`}
+                className={`${css.iconButton} ${css.iconDanger} ${css.keyCell}`}
                 aria-label={`${t('keyRemove')}: ${key}`}
                 onClick={() => { dropKey(key) }}
               >✕</button>
             ) : null}
-          </Fragment>
+          </div>
         ))}
       </div>
       {!readOnly ? (
@@ -586,7 +590,8 @@ function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
   )
 }
 
-/** The inline "add one config key" line: a key, a YAML value, and ＋. */
+/** The inline "add one config key" line: a key, a YAML value, and ＋ — on
+   the same two columns as the key rows above. */
 function AddKeyRow({ t, isTaken, onAdd }: {
   t: (key: AgentPresetSettingsKey) => string
   isTaken: (key: string) => boolean
@@ -616,7 +621,7 @@ function AddKeyRow({ t, isTaken, onAdd }: {
   return (
     <div className={css.keyAdd}>
       <input
-        className={`${css.cellInput} ${css.inputMono}`}
+        className={`${css.cellInput} ${css.inputMono} ${css.keyColName}`}
         value={key}
         spellCheck={false}
         placeholder={t('keyNamePlaceholder')}
@@ -625,7 +630,7 @@ function AddKeyRow({ t, isTaken, onAdd }: {
         onKeyDown={commitOnEnter}
       />
       <input
-        className={`${css.cellInput} ${css.inputMono}`}
+        className={`${css.cellInput} ${css.inputMono} ${css.keyColValue}`}
         value={value}
         spellCheck={false}
         placeholder={t('keyValuePlaceholder')}
@@ -633,7 +638,7 @@ function AddKeyRow({ t, isTaken, onAdd }: {
         onChange={(event) => { setValue(event.target.value); setError(null) }}
         onKeyDown={commitOnEnter}
       />
-      <button type="button" className={css.iconButton} aria-label={t('keyAdd')} title={t('keyAdd')}
+      <button type="button" className={`${css.iconButton} ${css.keyCell}`} aria-label={t('keyAdd')} title={t('keyAdd')}
         onClick={() => { commit() }}
       >＋</button>
       {error === null ? null : (
