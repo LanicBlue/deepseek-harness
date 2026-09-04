@@ -340,7 +340,130 @@ function MetadataFormFields({ t, readOnly, patchMetadata, providers, value }: Fo
 }
 
 /** One composition row's editable line: id, package, config, gates, isolate. */
-function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove, child }: {
+/** Editor state for one blur-committed YAML snippet field of a row. */
+function useSnippetField(row: RowFields, key: 'config' | 'isolate', onChange: (next: RowFields) => void): {
+  shown: string
+  error: boolean
+  /** A snippet being typed that has not committed yet. */
+  editing: boolean
+  setText: (text: string) => void
+  commit: () => void
+} {
+  const [text, setText] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+  const commit = (): void => {
+    if (text === null) return
+    try {
+      const parsed = text.trim() === '' ? undefined : parseConfigSnippet(text)
+      onChange(key === 'config' ? { ...row, config: parsed } : { ...row, isolate: parsed })
+      setText(null)
+      setError(false)
+    } catch {
+      setError(true)
+    }
+  }
+  const shown = text ?? (row[key] === undefined ? '' : renderConfigSnippet(row[key]))
+  return {
+    shown,
+    error,
+    editing: text !== null,
+    setText: (value: string) => { setText(value); setError(false) },
+    commit,
+  }
+}
+
+/** One labelled YAML snippet editor (a row's config, a group's isolate). */
+function SnippetField({ label, value, error, readOnly, t, onChange, onCommit }: {
+  label: string
+  value: string
+  error: boolean
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (text: string) => void
+  onCommit: () => void
+}): ReactNode {
+  return (
+    <label className={css.rowSnippet}>
+      <span className={css.rowLabel}>{label}</span>
+      <textarea
+        className={error ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
+        style={{ minHeight: 40 }}
+        value={value}
+        readOnly={readOnly}
+        spellCheck={false}
+        placeholder={t('rowConfig')}
+        onChange={(event) => {
+          if (readOnly) return
+          onChange(event.target.value)
+        }}
+        onBlur={onCommit}
+      />
+    </label>
+  )
+}
+
+/** A row header's boolean disabled gate, checkbox under its own label. */
+function RowBoolGate({ row, readOnly, t, onChange }: {
+  row: RowFields
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (next: RowFields) => void
+}): ReactNode {
+  if (typeof row.disabled === 'object') return null
+  return (
+    <div className={css.rowGateBool}>
+      <span className={css.rowLabel}>{t('rowDisabled')}</span>
+      <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
+        onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
+    </div>
+  )
+}
+
+/** A `!!js` expression gate: its own full-width line under the row header. */
+function RowJsGate({ row, readOnly, t, onChange }: {
+  row: RowFields
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (next: RowFields) => void
+}): ReactNode {
+  if (typeof row.disabled !== 'object') return null
+  return (
+    <div className={css.rowJsGate}>
+      <span className={css.rowLabel}>{t('jsExpressionGate')}</span>
+      <span className={css.gateLine}>
+        <code className={css.jsBadge} aria-hidden>!!js</code>
+        <input className={`${css.input} ${css.inputMono}`} value={row.disabled.js} readOnly={readOnly} spellCheck={false}
+          aria-label={t('jsExpressionGate')}
+          onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }} />
+      </span>
+    </div>
+  )
+}
+
+/** One row's ordering tools; the read-only viewer keeps the column as an
+   empty placeholder so the header grid does not shift between modes. */
+function RowTools({ index, total, t, onRemove, onMove, placeholder }: {
+  index: number
+  total: number
+  t: (key: AgentPresetSettingsKey) => string
+  onRemove: () => void
+  onMove: (delta: number) => void
+  placeholder?: boolean
+}): ReactNode {
+  if (placeholder === true) return <span className={css.rowTools} aria-hidden="true" />
+  return (
+    <span className={css.rowTools}>
+      <button type="button" className={css.iconButton} disabled={index === 0}
+        aria-label={t('rowUp')} onClick={() => { onMove(-1) }}>↑</button>
+      <button type="button" className={css.iconButton} disabled={index === total - 1}
+        aria-label={t('rowDown')} onClick={() => { onMove(1) }}>↓</button>
+      <button type="button" className={`${css.iconButton} ${css.iconDanger}`} aria-label={t('rowRemove')}
+        onClick={() => { onRemove() }}>✕</button>
+    </span>
+  )
+}
+
+function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
   row: RowFields
   index: number
   total: number
@@ -349,107 +472,130 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
   onChange: (next: RowFields) => void
   onRemove: () => void
   onMove: (delta: number) => void
-  /** Rendered inside a group container: skip the per-row card chrome. */
-  child?: boolean
 }): ReactNode {
-  const [configText, setConfigText] = useState<string | null>(null)
-  const [configError, setConfigError] = useState(false)
-  const [isolateText, setIsolateText] = useState<string | null>(null)
-  const [isolateError, setIsolateError] = useState(false)
-  const commitConfig = (): void => {
-    if (configText === null) return
-    try {
-      const parsed = configText.trim() === '' ? undefined : parseConfigSnippet(configText)
-      onChange({ ...row, config: parsed })
-      setConfigText(null)
-      setConfigError(false)
-    } catch {
-      setConfigError(true)
-    }
-  }
-  const commitIsolate = (): void => {
-    if (isolateText === null) return
-    try {
-      const parsed = isolateText.trim() === '' ? undefined : parseConfigSnippet(isolateText)
-      onChange({ ...row, isolate: parsed })
-      setIsolateText(null)
-      setIsolateError(false)
-    } catch {
-      setIsolateError(true)
-    }
-  }
-  const shown = configText ?? (row.config === undefined ? '' : renderConfigSnippet(row.config))
-  const isolateShown = isolateText ?? (row.isolate === undefined ? '' : renderConfigSnippet(row.isolate))
-  const jsGate = typeof row.disabled === 'object' ? row.disabled : undefined
+  const config = useSnippetField(row, 'config', onChange)
+  const isolate = useSnippetField(row, 'isolate', onChange)
   return (
-    <div className={child === true ? undefined : css.rowCard}>
-      <div className={css.formRow}>
-        <input className={css.input} value={row.id} readOnly={readOnly} spellCheck={false}
-          placeholder={t('rowId')} aria-label={`${t('rowId')} ${index + 1}`}
-          onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
-        <input className={css.input} value={row.name} readOnly={readOnly} spellCheck={false}
-          placeholder={t('rowName')} aria-label={`${t('rowName')} ${index + 1}`}
-          onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
-        {jsGate === undefined ? (
-          <label className={css.checkField}>
-            <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
-              onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
-            {t('rowDisabled')}
-          </label>
-        ) : (
-          <label className={css.checkField}>
-            <span aria-hidden>{t('jsExpressionGate')}</span>
-            <input className={css.input} value={jsGate.js} readOnly={readOnly} spellCheck={false}
-              onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }} />
-          </label>
-        )}
-        {!readOnly ? (
-          <span className={css.rowTools}>
-            <button type="button" className={css.iconButton} disabled={index === 0}
-              aria-label={t('rowUp')} onClick={() => { onMove(-1) }}>↑</button>
-            <button type="button" className={css.iconButton} disabled={index === total - 1}
-              aria-label={t('rowDown')} onClick={() => { onMove(1) }}>↓</button>
-            <button type="button" className={`${css.iconButton} ${css.iconDanger}`} aria-label={t('rowRemove')}
-              onClick={() => { onRemove() }}>✕</button>
-          </span>
-        ) : null}
+    <div className={css.rowCard}>
+      <div className={css.rowHead}>
+        <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
+        <label className={`${css.rowField}`}>
+          <span className={css.rowLabel}>{t('rowId')}</span>
+          <input className={`${css.input} ${css.inputMono}`} value={row.id} readOnly={readOnly} spellCheck={false}
+            aria-label={`${t('rowId')} ${index + 1}`}
+            onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
+        </label>
+        <label className={`${css.rowField}`}>
+          <span className={css.rowLabel}>{t('rowName')}</span>
+          <input className={`${css.input} ${css.inputMono}`} value={row.name} readOnly={readOnly} spellCheck={false}
+            aria-label={`${t('rowName')} ${index + 1}`}
+            onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
+        </label>
+        <RowBoolGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
       </div>
+      <RowJsGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
       {row.group === undefined ? (
-        <textarea
-          className={configError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
-          style={{ minHeight: 56 }}
-          value={shown}
-          readOnly={readOnly}
-          spellCheck={false}
-          placeholder={t('rowConfig')}
-          aria-label={`${t('rowConfig')} ${index + 1}`}
-          onChange={(event) => {
-            if (readOnly) return
-            setConfigText(event.target.value)
-            setConfigError(false)
-          }}
-          onBlur={commitConfig}
+        <SnippetField
+          label={t('rowConfig')} value={config.shown} error={config.error} readOnly={readOnly} t={t}
+          onChange={config.setText} onCommit={config.commit}
         />
       ) : null}
-      {row.isolate !== undefined || isolateText !== null ? (
-        <textarea
-          className={isolateError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
-          style={{ minHeight: 40 }}
-          value={isolateShown}
-          readOnly={readOnly}
-          spellCheck={false}
-          placeholder={t('rowIsolate')}
-          aria-label={`${t('rowIsolate')} ${index + 1}`}
-          onChange={(event) => {
-            if (readOnly) return
-            setIsolateText(event.target.value)
-            setIsolateError(false)
-          }}
-          onBlur={commitIsolate}
+      {row.isolate !== undefined || isolate.editing ? (
+        <SnippetField
+          label={t('rowIsolate')} value={isolate.shown} error={isolate.error} readOnly={readOnly} t={t}
+          onChange={isolate.setText} onCommit={isolate.commit}
         />
       ) : null}
-      {configError ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
-      {isolateError ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+      {config.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+      {isolate.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+    </div>
+  )
+}
+
+/** One group row: the fold header edits the group's own fields, the body holds child rows. */
+function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
+  row: RowFields
+  index: number
+  total: number
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  onChange: (next: RowFields) => void
+  onRemove: () => void
+  onMove: (delta: number) => void
+}): ReactNode {
+  const isolate = useSnippetField(row, 'isolate', onChange)
+  const patchChild = (childIndex: number, next: RowFields): void => {
+    const children = (row.children ?? []).map((current, i) => i === childIndex ? next : current)
+    onChange({ ...row, children })
+  }
+  const moveChild = (childIndex: number, delta: number): void => {
+    const list = row.children ?? []
+    const target = childIndex + delta
+    if (target < 0 || target >= list.length) return
+    const next = [...list]
+    const [moved] = next.splice(childIndex, 1)
+    if (moved !== undefined) next.splice(target, 0, moved)
+    onChange({ ...row, children: next })
+  }
+  return (
+    <div className={`${css.rowCard} ${css.rowGroupCard}`}>
+      <details open className={css.rowGroup}>
+        {/* The header IS the group's own row editor: clicks on its inputs must fold nothing. */}
+        <summary
+          className={css.rowGroupHead}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('input, textarea, button') !== null) event.preventDefault()
+          }}
+        >
+          <span className={css.groupLabel} aria-hidden>{t('rowGroup')}</span>
+          <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
+          <label className={`${css.rowField}`}>
+            <span className={css.rowLabel}>{t('rowId')}</span>
+            <input className={`${css.input} ${css.inputMono}`} value={row.id} readOnly={readOnly} spellCheck={false}
+              aria-label={`${t('rowId')} ${index + 1}`}
+              onChange={(event) => { onChange({ ...row, id: event.target.value }) }} />
+          </label>
+          <label className={`${css.rowField}`}>
+            <span className={css.rowLabel}>{t('rowName')}</span>
+            <input className={`${css.input} ${css.inputMono}`} value={row.name} readOnly={readOnly} spellCheck={false}
+              aria-label={`${t('rowName')} ${index + 1}`}
+              onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
+          </label>
+          <RowBoolGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
+        </summary>
+        <div className={css.rowGroupBody}>
+          <RowJsGate row={row} readOnly={readOnly} t={t} onChange={onChange} />
+          {row.isolate !== undefined || isolate.editing ? (
+            <SnippetField
+              label={t('rowIsolate')} value={isolate.shown} error={isolate.error} readOnly={readOnly} t={t}
+              onChange={isolate.setText} onCommit={isolate.commit}
+            />
+          ) : null}
+          {isolate.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+          {(row.children ?? []).map((child, childIndex) => (
+            <RowFieldsInput
+              key={childIndex}
+              row={child}
+              index={childIndex}
+              total={(row.children ?? []).length}
+              readOnly={readOnly}
+              t={t}
+              onChange={(next) => { patchChild(childIndex, next) }}
+              onRemove={() => {
+                const children = (row.children ?? []).filter((_, i) => i !== childIndex)
+                onChange({ ...row, children })
+              }}
+              onMove={(delta) => { moveChild(childIndex, delta) }}
+            />
+          ))}
+          {!readOnly ? (
+            <button type="button" className={`${css.secondaryButton} ${css.addRowButton}`}
+              onClick={() => { onChange({ ...row, children: [...(row.children ?? []), { id: '', name: '' }] }) }}>
+              {t('rowAddChild')}
+            </button>
+          ) : null}
+        </div>
+      </details>
     </div>
   )
 }
@@ -474,55 +620,17 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
   return (
     <div className={css.editorFields}>
       {rows.map((row, index) => row.group === true ? (
-        <div key={index} className={css.rowCard}>
-          <details open>
-            <summary className={css.formRow}>
-              <span className={css.groupLabel}>{t('rowGroup')}</span>
-              <span className={css.input} aria-hidden>{row.id === '' ? t('rowId') : row.id}</span>
-            </summary>
-            <RowFieldsInput
-              row={row}
-              index={index}
-              total={rows.length}
-              readOnly={readOnly}
-              t={t}
-              child
-              onChange={(next) => { patchRow(index, next) }}
-              onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
-              onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
-            />
-            {(row.children ?? []).map((child, childIndex) => (
-              <div key={childIndex} style={{ marginLeft: 20 }}>
-                <RowFieldsInput
-                  row={child}
-                  index={childIndex}
-                  total={(row.children ?? []).length}
-                  readOnly={readOnly}
-                  t={t}
-                  child
-                  onChange={(next) => {
-                    const children = (row.children ?? []).map((current, i) => i === childIndex ? next : current)
-                    patchRow(index, { ...row, children })
-                  }}
-                  onRemove={() => {
-                    const children = (row.children ?? []).filter((_, i) => i !== childIndex)
-                    patchRow(index, { ...row, children })
-                  }}
-                  onMove={(delta) => {
-                    const children = moveRow(row.children ?? [], childIndex, delta)
-                    patchRow(index, { ...row, children })
-                  }}
-                />
-              </div>
-            ))}
-            {!readOnly ? (
-              <button type="button" className={css.secondaryButton}
-                onClick={() => { patchRow(index, { ...row, children: [...(row.children ?? []), { id: '', name: '' }] }) }}>
-                {t('rowAddChild')}
-              </button>
-            ) : null}
-          </details>
-        </div>
+        <GroupRowFieldsInput
+          key={index}
+          row={row}
+          index={index}
+          total={rows.length}
+          readOnly={readOnly}
+          t={t}
+          onChange={(next) => { patchRow(index, next) }}
+          onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
+          onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
+        />
       ) : (
         <RowFieldsInput
           key={index}
@@ -537,7 +645,7 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
         />
       ))}
       {!readOnly ? (
-        <button type="button" className={css.secondaryButton}
+        <button type="button" className={`${css.secondaryButton} ${css.addRowButton}`}
           onClick={() => { setRows([...rows, { id: '', name: '' }]) }}>
           {t('rowAdd')}
         </button>
@@ -875,26 +983,30 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                 )
               })()}
             </div>
-            {viewerTab === 'composition'
-              ? (compositionForm !== undefined && (editing ? editingComposition : viewForm.composition)
-                ? (
-                  <CompositionFormFields
-                    t={t} readOnly={!editing} value={compositionForm}
-                    patchComposition={props.patchCompositionForm}
-                  />
-                )
-                : <pre className={css.viewerCode}>{currentCompositionText}</pre>)
-              : (metadataForm !== undefined && (editing ? editingMetadata : viewForm.metadata)
-                ? (
-                  <MetadataFormFields
-                    t={t} readOnly={!editing} value={metadataForm} providers={providers}
-                    patchMetadata={props.patchMetadataForm}
-                  />
-                )
-                : <pre className={css.viewerCode}>{currentMetadataText}</pre>)}
-            {state.edit !== null && state.edit.error === null ? null : state.edit === null ? null : (
-              <p className={css.error} role="alert">{state.edit.error}</p>
-            )}
+            {/* The body scrolls on its own: a long composition must never push
+                the tab row out of view or the footer buttons out of reach. */}
+            <div className={css.viewerBody}>
+              {viewerTab === 'composition'
+                ? (compositionForm !== undefined && (editing ? editingComposition : viewForm.composition)
+                  ? (
+                    <CompositionFormFields
+                      t={t} readOnly={!editing} value={compositionForm}
+                      patchComposition={props.patchCompositionForm}
+                    />
+                  )
+                  : <pre className={css.viewerCode}>{currentCompositionText}</pre>)
+                : (metadataForm !== undefined && (editing ? editingMetadata : viewForm.metadata)
+                  ? (
+                    <MetadataFormFields
+                      t={t} readOnly={!editing} value={metadataForm} providers={providers}
+                      patchMetadata={props.patchMetadataForm}
+                    />
+                  )
+                  : <pre className={css.viewerCode}>{currentMetadataText}</pre>)}
+              {state.edit !== null && state.edit.error === null ? null : state.edit === null ? null : (
+                <p className={css.error} role="alert">{state.edit.error}</p>
+              )}
+            </div>
           </>
         )}
       </Modal>
