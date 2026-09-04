@@ -523,6 +523,20 @@ describe('writeDocument', () => {
     expect(reasonOf(failure)).toContain('composition-not-a-list')
   })
 
+  it('accepts a composition carrying loader expression gates', async () => {
+    const { ctx } = await userHarness()
+
+    // Every shipped preset gates platform rows with `!!js`; without the
+    // Loader dialect a metadata-only edit could never be saved at all.
+    await ctx.agentPresets.writeDocument(
+      'editable',
+      'name: 新名字\n',
+      VALID + "- id: gated\n  name: '@deepseek-ai/dsh-system-prompt'\n  disabled: !!js process.platform === 'win32'\n",
+    )
+
+    expect((await ctx.agentPresets.readDocument('editable')).metadata).toBe('name: 新名字\n')
+  })
+
   it('refused documents leave the stored files untouched', async () => {
     const { ctx } = await userHarness()
 

@@ -24,6 +24,7 @@
 import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import z from '@deepseek-ai/schemastery'
 import yaml from 'js-yaml'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -120,7 +121,10 @@ function parseEditableMetadata(text: string): unknown | undefined {
 /** Parse editable composition text: a list of row records parses, else not. */
 function parseEditableComposition(text: string): unknown | undefined {
   try {
-    const parsed: unknown = yaml.load(text)
+    // The Loader's own dialect: rows carry `!!js` disabled gates, which the
+    // default schema refuses — without this, saving any edit to a preset
+    // whose composition has one (every shipped preset) always fails.
+    const parsed: unknown = yaml.load(text, { schema: entryListSchema })
     if (!Array.isArray(parsed)) return undefined
     return parsed.every(row => typeof row === 'object' && row !== null && !Array.isArray(row))
       ? parsed
