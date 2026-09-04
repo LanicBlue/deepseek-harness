@@ -22,6 +22,10 @@ import {
   isJsExprNode, isKeyMap, parseCompositionForm, parseMetadataForm, parseConfigSnippet, renderConfigSnippet,
   type CompositionForm, type MetadataForm, type ModelSelectionFields, type RowFields,
 } from './preset-forms.ts'
+import {
+  KNOWN_PACKAGES, classifyConfig, shortPackageId,
+  type ConfigField,
+} from './preset-config-schema.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetSection.module.css'
 
@@ -232,19 +236,29 @@ function ModelSelectionInput({ value, onChange, disabled, t, providers }: {
         aria-label={t('modelLabel')}
         onChange={(event) => { onChange({ ...value, model: event.target.value }) }}
       />
-      <input
-        className={css.input}
-        value={value.reasoningEffort ?? ''}
-        disabled={disabled}
-        spellCheck={false}
-        placeholder={`${t('effortLabel')} (low/medium/high)`}
-        aria-label={t('effortLabel')}
-        onChange={(event) => {
-          onChange(event.target.value === ''
-            ? { provider: value.provider, model: value.model }
-            : { ...value, reasoningEffort: event.target.value })
-        }}
-      />
+      {(() => {
+        const current = value.reasoningEffort ?? ''
+        const efforts: readonly string[] = ['low', 'medium', 'high'].includes(current) || current === ''
+          ? ['low', 'medium', 'high']
+          : [current, 'low', 'medium', 'high']
+        return (
+          <select
+            className={css.input}
+            value={current}
+            disabled={disabled}
+            aria-label={t('effortLabel')}
+            onChange={(event) => {
+              const picked = event.target.value
+              onChange(picked === ''
+                ? { provider: value.provider, model: value.model }
+                : { ...value, reasoningEffort: picked })
+            }}
+          >
+            <option value="">{t('effortLabel')}</option>
+            {efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+          </select>
+        )
+      })()}
     </span>
   )
 }
@@ -439,10 +453,118 @@ function GateCell({ row, readOnly, t, onChange }: {
   )
 }
 
-/** One config value as the control its own type reads as: booleans are
-   checkboxes, numbers number inputs, short strings text inputs, long strings
-   textareas, `!!js` nodes expression inputs — anything else stays YAML. */
-function ConfigValueCell({ name, value, readOnly, t, onChange }: {
+/** One schema-typed config value as the control its kind reads as: booleans
+   are checkboxes, enums selects, numbers number inputs, prompts textareas,
+   `!!js` nodes expression inputs. */
+function SchemaValueCell({ name, field, value, readOnly, onChange }: {
+  /** The config key; the control's accessible name. */
+  name: string
+  field: ConfigField
+  value: unknown
+  readOnly: boolean
+  onChange: (next: unknown) => void
+}): ReactNode {
+  const onText = (event: { target: { value: string } }): void => { onChange(event.target.value) }
+  switch (field.kind) {
+    case 'boolean':
+      return (
+        <input type="checkbox" className={css.gateCheck} checked={value === true} disabled={readOnly} aria-label={name}
+          onChange={(event) => { onChange(event.target.checked) }} />
+      )
+    case 'enum': {
+      const current = typeof value === 'string' ? value : ''
+      const options = field.options.includes(current) || current === ''
+        ? field.options
+        : [current, ...field.options]
+      return (
+        <select className={css.cellInput} value={current} disabled={readOnly} aria-label={name} onChange={onText}>
+          {current === '' ? <option value="" /> : null}
+          {options.map(option => <option key={option} value={option}>{option}</option>)}
+        </select>
+      )
+    }
+    case 'number':
+      return (
+        <input type="number" className={`${css.cellInput} ${css.inputMono}`} value={typeof value === 'number' ? value : ''} readOnly={readOnly}
+          spellCheck={false} aria-label={name}
+          onChange={(event) => {
+            const parsed = Number(event.target.value)
+            if (event.target.value !== '' && Number.isFinite(parsed)) onChange(parsed)
+          }} />
+      )
+    case 'text':
+      return (
+        <input className={css.cellInput} value={typeof value === 'string' ? value : ''} readOnly={readOnly} spellCheck={false}
+          aria-label={name} onChange={onText} />
+      )
+    case 'prompt':
+      return (
+        <textarea className={css.cellArea} style={{ minHeight: 72 }} value={typeof value === 'string' ? value : ''}
+          readOnly={readOnly} spellCheck={false} aria-label={name} onChange={onText} />
+      )
+    case 'js':
+      return (
+        <span className={css.gateLine}>
+          <code className={css.jsBadge} aria-hidden="true">!!js</code>
+          <input className={`${css.cellInput} ${css.inputMono}`} value={isJsExprNode(value) ? value.__jsExpr : ''} readOnly={readOnly}
+            spellCheck={false} aria-label={name} onChange={(event) => { onChange({ __jsExpr: event.target.value }) }} />
+        </span>
+      )
+    case 'advanced':
+      return null
+  }
+}
+
+/** The plugin package picker: a select over the known packages, with a
+   free-text fallback for packages the catalog does not know. */
+function PackageSelect({ row, readOnly, t, packageListId, onChange }: {
+  row: RowFields
+  readOnly: boolean
+  t: (key: AgentPresetSettingsKey) => string
+  packageListId: string
+  onChange: (next: RowFields) => void
+}): ReactNode {
+  const [custom, setCustom] = useState(false)
+  if (custom) {
+    return (
+      <span className={css.pkgCustom}>
+        <input className={`${css.cellInput} ${css.inputMono}`} value={row.name} list={packageListId} readOnly={readOnly}
+          spellCheck={false} placeholder={t('rowName')} aria-label={t('rowHeadPackage')}
+          onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
+        <button type="button" className={css.iconButton} aria-label={t('packagePick')} title={t('packagePick')}
+          onClick={() => { setCustom(false) }}>▾</button>
+      </span>
+    )
+  }
+  const current = row.name
+  const options = current !== '' && !KNOWN_PACKAGES.includes(current) ? [current, ...KNOWN_PACKAGES] : KNOWN_PACKAGES
+  return (
+    <select
+      className={`${css.cellInput} ${css.inputMono}`}
+      value={current}
+      disabled={readOnly}
+      aria-label={t('rowHeadPackage')}
+      onChange={(event) => {
+        const picked = event.target.value
+        if (picked === '') return
+        if (picked === '__custom') {
+          setCustom(true)
+          return
+        }
+        onChange({ ...row, name: picked, id: row.id === '' ? shortPackageId(picked) : row.id })
+      }}
+    >
+      {current === '' ? <option value="">{t('packagePlaceholder')}</option> : null}
+      {options.map(name => <option key={name} value={name}>{name}</option>)}
+      {!readOnly ? <option value="__custom">{t('packageCustom')}</option> : null}
+    </select>
+  )
+}
+
+/** One key-map value as the control its own runtime type reads as — the
+   generic editor behind isolate maps and the advanced fold, where no
+   package schema speaks for the key. */
+function KeyValueCell({ name, value, readOnly, t, onChange }: {
   /** The key this value sits under; the control's accessible name. */
   name: string
   value: unknown
@@ -506,7 +628,7 @@ function ConfigValueCell({ name, value, readOnly, t, onChange }: {
   return <YamlCell name={name} value={value} readOnly={readOnly} t={t} onChange={onChange} />
 }
 
-/** One object/array config value as a blur-committed YAML mini editor. */
+/** One object/array key-map value as a blur-committed YAML mini editor. */
 function YamlCell({ name, value, readOnly, t, onChange }: {
   name: string
   value: unknown
@@ -546,6 +668,7 @@ function YamlCell({ name, value, readOnly, t, onChange }: {
    in the identifier column, its control in the package column — the same two
    columns the row lines above use. */
 function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
+  /** Section heading; empty renders no heading line. */
   heading: string
   record: Record<string, unknown>
   readOnly: boolean
@@ -564,13 +687,13 @@ function KeyValueFields({ heading, record, readOnly, t, onPatch }: {
   }
   return (
     <div className={css.keyBlock}>
-      <span className={css.keyHeading}>{heading}</span>
+      {heading === '' ? null : <span className={css.keyHeading}>{heading}</span>}
       <div className={css.keyRows}>
         {keys.map(key => (
           <div key={key} className={css.keyRow}>
             <span className={css.keyName} title={key}>{key}</span>
             <span className={css.keyValue}>
-              <ConfigValueCell name={key} value={record[key]} readOnly={readOnly} t={t} onChange={(value) => { setKey(key, value) }} />
+              <KeyValueCell name={key} value={record[key]} readOnly={readOnly} t={t} onChange={(value) => { setKey(key, value) }} />
             </span>
             {!readOnly ? (
               <button
@@ -685,6 +808,9 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
 }): ReactNode {
   const configSnippet = useSnippetField(row, 'config', onChange)
   const isolateSnippet = useSnippetField(row, 'isolate', onChange)
+  const classified = classifyConfig(row.name, row.config)
+  const advancedKeys = Object.keys(classified.advanced)
+  const patchConfig = (next: unknown): void => { onChange({ ...row, config: next }) }
   return (
     <div className={css.rowCard}>
       <div className={css.rowLine}>
@@ -699,16 +825,11 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
           aria-label={`${t('rowHeadId')} ${index + 1}`}
           onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
         />
-        <input
-          className={`${css.cellInput} ${css.inputMono}`}
-          value={row.name}
-          readOnly={readOnly}
-          spellCheck={false}
-          placeholder={t('rowName')}
-          aria-label={`${t('rowHeadPackage')} ${index + 1}`}
-          list={packageListId}
-          onChange={(event) => { onChange({ ...row, name: event.target.value }) }}
-        />
+        {packageListId === undefined ? null : (
+          <PackageSelect
+            row={row} readOnly={readOnly} t={t} packageListId={packageListId} onChange={onChange}
+          />
+        )}
         <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
       </div>
       {typeof row.disabled === 'object' ? (
@@ -724,34 +845,38 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
           />
         </div>
       ) : null}
-      {row.group === undefined ? (
-        isKeyMap(row.config) ? (
-          <KeyValueFields
-            heading={t('configKeysLabel')}
-            record={row.config}
-            readOnly={readOnly}
-            t={t}
-            onPatch={(next) => { onChange({ ...row, config: next }) }}
-          />
-        ) : row.config === undefined ? (
-          readOnly ? null : (
-            <KeyValueFields
-              heading={t('configKeysLabel')}
-              record={{}}
-              readOnly={readOnly}
-              t={t}
-              onPatch={(next) => { onChange({ ...row, config: next }) }}
-            />
-          )
-        ) : (
-          <>
-            <SnippetField
-              label={t('configKeysLabel')} value={configSnippet.shown} error={configSnippet.error} readOnly={readOnly} t={t}
-              onChange={configSnippet.setText} onCommit={configSnippet.commit}
-            />
-            {configSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
-          </>
-        )
+      {row.group === undefined && classified.fields.length > 0 ? (
+        <div className={css.keyRows}>
+          {classified.fields.map(({ field, value }) => (
+            <div key={field.key} className={css.keyRow}>
+              <span className={css.keyName} title={field.key}>{field.key}</span>
+              <span className={css.keyValue}>
+                <SchemaValueCell
+                  name={field.key} field={field} value={value} readOnly={readOnly}
+                  onChange={(next) => { patchConfig({ ...(row.config as Record<string, unknown>), [field.key]: next }) }}
+                />
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {row.group === undefined && (!readOnly || !classified.mapped || advancedKeys.length > 0) ? (
+        <details className={css.advFold}>
+          <summary className={css.advHead}>
+            {t('advancedLabel')}{advancedKeys.length > 0 ? ` · ${advancedKeys.length}` : ''}
+          </summary>
+          {!classified.mapped ? (
+            <>
+              <SnippetField
+                label={t('configKeysLabel')} value={configSnippet.shown} error={configSnippet.error} readOnly={readOnly} t={t}
+                onChange={configSnippet.setText} onCommit={configSnippet.commit}
+              />
+              {configSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+            </>
+          ) : (
+            <KeyValueFields heading="" record={classified.advanced} readOnly={readOnly} t={t} onPatch={patchConfig} />
+          )}
+        </details>
       ) : null}
       {isKeyMap(row.isolate) ? (
         <KeyValueFields
@@ -913,7 +1038,7 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
     if (moved !== undefined) next.splice(target, 0, moved)
     return next
   }
-  const packageNames = new Set<string>()
+  const packageNames = new Set<string>(KNOWN_PACKAGES)
   collectPackageNames(rows, packageNames)
   return (
     <div className={`${css.editorFields} ${readOnly ? css.rowListRead : css.rowListEdit}`}>

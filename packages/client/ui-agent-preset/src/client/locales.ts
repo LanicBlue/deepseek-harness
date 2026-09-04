@@ -22,6 +22,7 @@ export type AgentPresetSettingsKey =
   | 'rowId' | 'rowName' | 'rowConfig'
   | 'rowHeadEnabled' | 'rowHeadId' | 'rowHeadPackage'
   | 'configKeysLabel' | 'isolateKeysLabel'
+  | 'advancedLabel' | 'packageCustom' | 'packagePlaceholder' | 'packagePick'
   | 'keyRemove' | 'keyAdd' | 'keyNamePlaceholder' | 'keyValuePlaceholder' | 'keyExists'
   | 'rowAdd' | 'rowAddChild' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
   | 'rowGroup' | 'jsExpressionGate'
@@ -102,6 +103,10 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   rowHeadPackage: 'Plugin package',
   configKeysLabel: 'Config',
   isolateKeysLabel: 'isolate',
+  advancedLabel: 'Advanced',
+  packageCustom: 'Custom package…',
+  packagePlaceholder: 'Choose a package',
+  packagePick: 'Pick from the list',
   keyRemove: 'Remove this key',
   keyAdd: '＋ config key',
   keyNamePlaceholder: 'key',
@@ -203,6 +208,10 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   rowHeadPackage: '插件包',
   configKeysLabel: '配置',
   isolateKeysLabel: 'isolate',
+  advancedLabel: '高级',
+  packageCustom: '自定义包名…',
+  packagePlaceholder: '选择插件包',
+  packagePick: '从列表选择',
   keyRemove: '移除该键',
   keyAdd: '＋ 配置键',
   keyNamePlaceholder: '键名',
