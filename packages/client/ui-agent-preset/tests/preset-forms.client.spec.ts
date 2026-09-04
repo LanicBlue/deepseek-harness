@@ -1,7 +1,8 @@
+import { load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import {
-  formRepresents, parseCompositionForm, parseConfigSnippet, parseMetadataForm,
-  renderCompositionForm, renderConfigSnippet, renderMetadataForm,
+  type CompositionForm, ENTRY_SCHEMA, formRepresents, parseCompositionForm, parseConfigSnippet,
+  parseMetadataForm, renderCompositionForm, renderConfigSnippet, renderMetadataForm,
 } from '../src/client/preset-forms.ts'
 
 describe('metadata form round-trips', () => {
@@ -77,12 +78,130 @@ describe('composition form round-trips', () => {
     expect(parseCompositionForm(renderCompositionForm(form))).toEqual(form)
   })
 
-  it('refuses group rows, nested children, and expression gates', () => {
-    expect(parseCompositionForm('- id: g\n  name: cordis:group\n  group: true\n')).toBeUndefined()
-    expect(parseCompositionForm('- id: g\n  name: n\n  isolate:\n    terminals: true\n')).toBeUndefined()
+  it('represents group rows, isolate declarations, and expression gates', () => {
+    const group = parseCompositionForm(
+      '- id: g\n  name: cordis:group\n  group: true\n  isolate:\n    terminals: true\n  config:\n    - id: c\n      name: n\n      disabled: !!js process.platform === \'win32\'\n',
+    )
+    expect(group).toEqual({
+      rows: [{
+        id: 'g',
+        name: 'cordis:group',
+        group: true,
+        isolate: { terminals: true },
+        children: [{ id: 'c', name: 'n', disabled: { js: "process.platform === 'win32'" } }],
+      }],
+    })
+    expect(parseCompositionForm(renderCompositionForm(group!))).toEqual(group)
+    // Nested maps inside a plain row's config stay plain config.
     expect(parseCompositionForm('- id: r\n  name: n\n  config:\n    rows:\n      - nested: true\n')).toBeDefined()
+  })
+
+  it('round-trips freshly added, still-empty draft rows', () => {
+    // An added row (id/name not filled yet) must not collapse the form to YAML.
+    const draft = { rows: [{ id: '', name: '' }] }
+    expect(parseCompositionForm(renderCompositionForm(draft))).toEqual(draft)
+    const groupDraft: CompositionForm = {
+      rows: [{ id: '', name: '', group: true, children: [{ id: '', name: '' }] }],
+    }
+    expect(parseCompositionForm(renderCompositionForm(groupDraft))).toEqual(groupDraft)
+  })
+
+  it('refuses shapes the form would drop', () => {
+    expect(parseCompositionForm('- id: r\n  name: n\n  unknown: 1\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: r\n  name: n\n  disabled: 123\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: r\n  name: n\n  disabled: [true]\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: g\n  name: n\n  group: true\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: g\n  name: n\n  group: true\n  config: not-a-list\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: g\n  name: n\n  group: yes\n')).toBeUndefined()
+    expect(parseCompositionForm('- id: g\n  name: n\n  group: true\n  config:\n    - noIdHere: true\n')).toBeUndefined()
     expect(parseCompositionForm('- noIdHere: true\n')).toBeUndefined()
     expect(parseCompositionForm('just: a mapping\n')).toBeUndefined()
+  })
+})
+
+describe('imsmoke composition fragments', () => {
+  // Real fragments of ~/.dsh/.agent-presets/imsmoke/agent.cordis.yml, trimmed
+  // to the structural surface (specs must not read $HOME): two group rows with
+  // isolate realms, nested children, boolean and `!!js` disabled gates, a
+  // block-scalar config, and a `!!js` expression inside a config value.
+  const IMSMOKE = [
+    '- id: persona',
+    "  name: '@deepseek-ai/dsh-persona'",
+    '  config:',
+    '    text: You are a helpful software engineer assistant.',
+    '    complete: true',
+    '- id: persistent-shell',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    terminals: true',
+    '  config:',
+    '    - id: pty',
+    "      name: '@deepseek-ai/dsh-terminal'",
+    '    - id: terminal-bash',
+    "      name: '@deepseek-ai/dsh-terminal-bash'",
+    "      disabled: !!js process.platform === 'win32'",
+    '      config:',
+    '        timeoutMs: 300000',
+    '    - id: persistent-bash',
+    "      name: '@deepseek-ai/dsh-tool-bash-persistent'",
+    "      disabled: !!js process.platform === 'win32'",
+    '      config:',
+    '        timeoutMs: 300000',
+    '        description: |-',
+    '          Run commands in a bash shell',
+    '          * State is persistent across command calls and discussions with the user.',
+    '    - id: terminal-pwsh',
+    "      name: '@deepseek-ai/dsh-terminal-bash'",
+    "      disabled: !!js process.platform !== 'win32'",
+    '      config:',
+    '        shellDialect: pwsh',
+    '        timeoutMs: 300000',
+    '    - id: persistent-pwsh',
+    "      name: '@deepseek-ai/dsh-tool-pwsh-persistent'",
+    "      disabled: !!js process.platform !== 'win32'",
+    '      config:',
+    '        timeoutMs: 300000',
+    '- id: filesystem',
+    '  name: cordis:group',
+    '  group: true',
+    '  isolate:',
+    '    fs: true',
+    '  config:',
+    '    - id: fs-local',
+    "      name: '@deepseek-ai/dsh-fs-local'",
+    '      config:',
+    '        cwd: !!js process.env.DSH_CWD ?? process.cwd()',
+    '    - id: str-replace-editor',
+    "      name: '@deepseek-ai/dsh-tool-str-replace-editor'",
+    '      config:',
+    '        maxOutputChars: 16000',
+  ].join('\n') + '\n'
+
+  it('parse∘render is the identity on the real fragment set', () => {
+    const form = parseCompositionForm(IMSMOKE)!
+    expect(form).toBeDefined()
+    expect(form.rows).toHaveLength(3)
+    const shell = form.rows[1]!
+    expect(shell.group).toBe(true)
+    expect(shell.isolate).toEqual({ terminals: true })
+    expect(shell.children).toHaveLength(5)
+    expect(shell.children![1]!.disabled).toEqual({ js: "process.platform === 'win32'" })
+    expect(form.rows[2]!.children![0]!.config)
+      .toEqual({ cwd: { __jsExpr: 'process.env.DSH_CWD ?? process.cwd()' } })
+    expect(parseCompositionForm(renderCompositionForm(form))).toEqual(form)
+  })
+
+  it('the rendered text reloads under the entry dialect structure-equal to the first parse', () => {
+    const form = parseCompositionForm(IMSMOKE)!
+    const rendered = renderCompositionForm(form)
+    const reloaded = load(rendered, { schema: ENTRY_SCHEMA })
+    // The stored shape: children under `config`, `!!js` gates as expression nodes.
+    const direct = load(IMSMOKE, { schema: ENTRY_SCHEMA })
+    expect(reloaded).toEqual(direct)
+    // And the `!!js` tag survives the round trip literally in the text.
+    expect(rendered).toContain("disabled: !!js process.platform === 'win32'")
+    expect(rendered).toContain('cwd: !!js process.env.DSH_CWD ?? process.cwd()')
   })
 })
 
@@ -90,7 +209,7 @@ describe('formRepresents', () => {
   it('needs BOTH documents representable', () => {
     const metadata = 'name: x\n'
     expect(formRepresents(metadata, '- id: a\n  name: n\n')).toBe(true)
-    expect(formRepresents(metadata, '- id: a\n  name: n\n  group: true\n')).toBe(false)
+    expect(formRepresents(metadata, '- id: a\n  name: n\n  group: true\n  config: []\n')).toBe(true)
     expect(formRepresents('unknown: 1\n', '- id: a\n  name: n\n')).toBe(false)
   })
 })
@@ -101,5 +220,11 @@ describe('config snippets', () => {
     expect(value).toEqual({ text: 'hello', limit: 3 })
     expect(parseConfigSnippet(renderConfigSnippet(value))).toEqual(value)
     expect(() => parseConfigSnippet('broken: [')).toThrow()
+  })
+
+  it('round-trips `!!js` expression values in the entry dialect', () => {
+    const value = parseConfigSnippet('cwd: !!js process.env.X ?? process.cwd()\n')
+    expect(value).toEqual({ cwd: { __jsExpr: 'process.env.X ?? process.cwd()' } })
+    expect(renderConfigSnippet(value)).toContain('cwd: !!js process.env.X ?? process.cwd()')
   })
 })

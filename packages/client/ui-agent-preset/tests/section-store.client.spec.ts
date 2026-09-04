@@ -642,18 +642,26 @@ describe('the form-mode editor', () => {
     expect(controller.store.getSnapshot().edit?.metadataMode).toBe('form')
     expect(controller.store.getSnapshot().edit?.compositionMode).toBe('form')
 
-    // A group row pins the composition to YAML: the editor refuses the form.
+    // A group row with children is form-representable now: the editor opens
+    // the form for it; an unrepresentable shape (group without a child list)
+    // still pins only the COMPOSITION to YAML, and the metadata form opens.
     const grouped = harness()
-    grouped.presets.get('mine')!.content = '- id: g\n  name: cordis:group\n  group: true\n'
+    grouped.presets.get('mine')!.content = '- id: g\n  name: cordis:group\n  group: true\n  config:\n    - id: c\n      name: n\n'
     await grouped.controller.load()
     await grouped.controller.view('mine')
     grouped.controller.beginEdit()
-    // The group row pins only the COMPOSITION to YAML; the metadata form
-    // still opens.
-    expect(grouped.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
+    expect(grouped.controller.store.getSnapshot().edit?.compositionMode).toBe('form')
     expect(grouped.controller.store.getSnapshot().edit?.metadataMode).toBe('form')
-    grouped.controller.setEditMode('composition', 'form')
-    expect(grouped.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
+
+    const pinned = harness()
+    pinned.presets.get('mine')!.content = '- id: g\n  name: cordis:group\n  group: true\n'
+    await pinned.controller.load()
+    await pinned.controller.view('mine')
+    pinned.controller.beginEdit()
+    expect(pinned.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
+    expect(pinned.controller.store.getSnapshot().edit?.metadataMode).toBe('form')
+    pinned.controller.setEditMode('composition', 'form')
+    expect(pinned.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
   })
 
   it('serializes form patches back into the draft text', async () => {

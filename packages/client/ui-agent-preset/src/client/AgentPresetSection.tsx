@@ -339,8 +339,8 @@ function MetadataFormFields({ t, readOnly, patchMetadata, providers, value }: Fo
   )
 }
 
-/** One composition row's editable line: id, package, config, disabled. */
-function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove }: {
+/** One composition row's editable line: id, package, config, gates, isolate. */
+function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, onMove, child }: {
   row: RowFields
   index: number
   total: number
@@ -349,9 +349,13 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
   onChange: (next: RowFields) => void
   onRemove: () => void
   onMove: (delta: number) => void
+  /** Rendered inside a group container: skip the per-row card chrome. */
+  child?: boolean
 }): ReactNode {
   const [configText, setConfigText] = useState<string | null>(null)
   const [configError, setConfigError] = useState(false)
+  const [isolateText, setIsolateText] = useState<string | null>(null)
+  const [isolateError, setIsolateError] = useState(false)
   const commitConfig = (): void => {
     if (configText === null) return
     try {
@@ -363,9 +367,22 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
       setConfigError(true)
     }
   }
+  const commitIsolate = (): void => {
+    if (isolateText === null) return
+    try {
+      const parsed = isolateText.trim() === '' ? undefined : parseConfigSnippet(isolateText)
+      onChange({ ...row, isolate: parsed })
+      setIsolateText(null)
+      setIsolateError(false)
+    } catch {
+      setIsolateError(true)
+    }
+  }
   const shown = configText ?? (row.config === undefined ? '' : renderConfigSnippet(row.config))
+  const isolateShown = isolateText ?? (row.isolate === undefined ? '' : renderConfigSnippet(row.isolate))
+  const jsGate = typeof row.disabled === 'object' ? row.disabled : undefined
   return (
-    <div className={css.rowCard}>
+    <div className={child === true ? undefined : css.rowCard}>
       <div className={css.formRow}>
         <input className={css.input} value={row.id} readOnly={readOnly} spellCheck={false}
           placeholder={t('rowId')} aria-label={`${t('rowId')} ${index + 1}`}
@@ -373,11 +390,19 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
         <input className={css.input} value={row.name} readOnly={readOnly} spellCheck={false}
           placeholder={t('rowName')} aria-label={`${t('rowName')} ${index + 1}`}
           onChange={(event) => { onChange({ ...row, name: event.target.value }) }} />
-        <label className={css.checkField}>
-          <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
-            onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
-          {t('rowDisabled')}
-        </label>
+        {jsGate === undefined ? (
+          <label className={css.checkField}>
+            <input type="checkbox" checked={row.disabled === true} disabled={readOnly}
+              onChange={(event) => { onChange({ ...row, disabled: event.target.checked }) }} />
+            {t('rowDisabled')}
+          </label>
+        ) : (
+          <label className={css.checkField}>
+            <span aria-hidden>{t('jsExpressionGate')}</span>
+            <input className={css.input} value={jsGate.js} readOnly={readOnly} spellCheck={false}
+              onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }} />
+          </label>
+        )}
         {!readOnly ? (
           <span className={css.rowTools}>
             <button type="button" className={css.iconButton} disabled={index === 0}
@@ -389,35 +414,116 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
           </span>
         ) : null}
       </div>
-      <textarea
-        className={configError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
-        style={{ minHeight: 56 }}
-        value={shown}
-        readOnly={readOnly}
-        spellCheck={false}
-        placeholder={t('rowConfig')}
-        aria-label={`${t('rowConfig')} ${index + 1}`}
-        onChange={(event) => {
-          if (readOnly) return
-          setConfigText(event.target.value)
-          setConfigError(false)
-        }}
-        onBlur={commitConfig}
-      />
+      {row.group === undefined ? (
+        <textarea
+          className={configError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
+          style={{ minHeight: 56 }}
+          value={shown}
+          readOnly={readOnly}
+          spellCheck={false}
+          placeholder={t('rowConfig')}
+          aria-label={`${t('rowConfig')} ${index + 1}`}
+          onChange={(event) => {
+            if (readOnly) return
+            setConfigText(event.target.value)
+            setConfigError(false)
+          }}
+          onBlur={commitConfig}
+        />
+      ) : null}
+      {row.isolate !== undefined || isolateText !== null ? (
+        <textarea
+          className={isolateError ? `${css.editorText} ${css.editorTextInvalid}` : css.editorText}
+          style={{ minHeight: 40 }}
+          value={isolateShown}
+          readOnly={readOnly}
+          spellCheck={false}
+          placeholder={t('rowIsolate')}
+          aria-label={`${t('rowIsolate')} ${index + 1}`}
+          onChange={(event) => {
+            if (readOnly) return
+            setIsolateText(event.target.value)
+            setIsolateError(false)
+          }}
+          onBlur={commitIsolate}
+        />
+      ) : null}
       {configError ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
+      {isolateError ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
     </div>
   )
 }
 
-/** The agent.cordis.yml fields: the plugin-row list. */
+/** The agent.cordis.yml fields: plugin rows and collapsible group rows. */
 function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFieldsProps & {
   value: CompositionForm
 }): ReactNode {
   const rows = value.rows
   const setRows = (next: RowFields[]): void => { patchComposition?.({ rows: next }) }
+  const patchRow = (index: number, next: RowFields): void => {
+    setRows(rows.map((current, i) => i === index ? next : current))
+  }
+  const moveRow = (list: RowFields[], index: number, delta: number): RowFields[] => {
+    const target = index + delta
+    if (target < 0 || target >= list.length) return list
+    const next = [...list]
+    const [moved] = next.splice(index, 1)
+    if (moved !== undefined) next.splice(target, 0, moved)
+    return next
+  }
   return (
     <div className={css.editorFields}>
-      {rows.map((row, index) => (
+      {rows.map((row, index) => row.group === true ? (
+        <div key={index} className={css.rowCard}>
+          <details open>
+            <summary className={css.formRow}>
+              <span className={css.groupLabel}>{t('rowGroup')}</span>
+              <span className={css.input} aria-hidden>{row.id === '' ? t('rowId') : row.id}</span>
+            </summary>
+            <RowFieldsInput
+              row={row}
+              index={index}
+              total={rows.length}
+              readOnly={readOnly}
+              t={t}
+              child
+              onChange={(next) => { patchRow(index, next) }}
+              onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
+              onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
+            />
+            {(row.children ?? []).map((child, childIndex) => (
+              <div key={childIndex} style={{ marginLeft: 20 }}>
+                <RowFieldsInput
+                  row={child}
+                  index={childIndex}
+                  total={(row.children ?? []).length}
+                  readOnly={readOnly}
+                  t={t}
+                  child
+                  onChange={(next) => {
+                    const children = (row.children ?? []).map((current, i) => i === childIndex ? next : current)
+                    patchRow(index, { ...row, children })
+                  }}
+                  onRemove={() => {
+                    const children = (row.children ?? []).filter((_, i) => i !== childIndex)
+                    patchRow(index, { ...row, children })
+                  }}
+                  onMove={(delta) => {
+                    const children = moveRow(row.children ?? [], childIndex, delta)
+                    patchRow(index, { ...row, children })
+                  }}
+                />
+              </div>
+            ))}
+            {!readOnly ? (
+              <button type="button" className={css.secondaryButton}
+                onClick={() => { patchRow(index, { ...row, children: [...(row.children ?? []), { id: '', name: '' }] }) }}>
+                {t('rowAddChild')}
+              </button>
+            ) : null}
+          </details>
+        </div>
+      ) : (
         <RowFieldsInput
           key={index}
           row={row}
@@ -425,16 +531,9 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
           total={rows.length}
           readOnly={readOnly}
           t={t}
-          onChange={(next) => { setRows(rows.map((current, i) => i === index ? next : current)) }}
+          onChange={(next) => { patchRow(index, next) }}
           onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
-          onMove={(delta) => {
-            const target = index + delta
-            if (target < 0 || target >= rows.length) return
-            const next = [...rows]
-            const [moved] = next.splice(index, 1)
-            if (moved !== undefined) next.splice(target, 0, moved)
-            setRows(next)
-          }}
+          onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
         />
       ))}
       {!readOnly ? (

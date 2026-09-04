@@ -4,15 +4,41 @@
  * The form is the friendly face; YAML stays the storage and the escape
  * hatch. That split only works when the form NEVER silently drops content:
  * parsing refuses (returns undefined) any document whose shape the form
- * cannot round-trip exactly — unknown metadata keys, group rows, `!!js`
- * gates, nested children all force the YAML mode — and rendering is the
- * inverse of parsing for everything it accepts. The editor keeps the two
- * file texts as its single source of truth and re-serializes on every form
- * change, so switching modes can never fork state.
+ * cannot round-trip exactly — unknown keys, malformed disabled gates — and
+ * rendering is the inverse of parsing for everything it accepts, group rows
+ * and `!!js` expression gates included. The editor keeps the two file texts
+ * as its single source of truth and re-serializes on every form change, so
+ * switching modes can never fork state.
  * @module @deepseek-ai/dsh-client-ui-agent-preset/preset-forms
  */
 
-import { load, dump } from 'js-yaml'
+import { load, dump, JSON_SCHEMA, Type } from 'js-yaml'
+
+/** Whether a value is an inlined `!!js` expression node. */
+function isJsExprNode(data: unknown): data is { __jsExpr: string } {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return false
+  const record = data as { __jsExpr?: unknown }
+  const keys = Object.keys(record)
+  return keys.length === 1 && typeof record.__jsExpr === 'string'
+}
+
+/**
+ * The entry-list YAML dialect, inlined from the Loader's include plugin
+ * (the client cannot import host packages). `!!js` scalars round-trip as
+ * `{ __jsExpr }` nodes; the tag literal is byte-identical to the host's
+ * `'tag:yaml.org,2002:js'`, so rendered text reloads under the host schema
+ * without a rewrite.
+ */
+const JS_EXPR = new Type('tag:yaml.org,2002:js', {
+  kind: 'scalar',
+  resolve: data => typeof data === 'string',
+  construct: data => ({ __jsExpr: data }),
+  predicate: data => isJsExprNode(data),
+  represent: data => (data as { __jsExpr: string })['__jsExpr'],
+})
+
+/** The composition dialect: JSON values plus `!!js` expression scalars. */
+export const ENTRY_SCHEMA = JSON_SCHEMA.extend(JS_EXPR)
 
 /** One provider/model/effort answer, as the metadata file stores it. */
 export interface ModelSelectionFields {
@@ -31,16 +57,23 @@ export interface MetadataForm {
   modelFallbacks?: ModelSelectionFields[]
 }
 
-/** One composition row as a form can edit it: a plain plugin row. */
+/** One composition row as a form can edit it: a plugin row or a group. */
 export interface RowFields {
   id: string
   name: string
+  /** Group-row marker; the YAML `group: true` key. */
+  group?: true
+  /** A group row's child rows; the YAML `config` array in the stored file. */
+  children?: RowFields[]
   /** The row's config exactly as stored, re-dumped verbatim on render. */
   config?: unknown
-  disabled?: boolean
+  /** The group realm declaration, kept verbatim; group rows in practice. */
+  isolate?: unknown
+  /** Boolean gate, or the source text of a `!!js` expression gate. */
+  disabled?: boolean | { js: string }
 }
 
-/** The composition file as a form can edit it: flat plugin rows only. */
+/** The composition file as a form can edit it: flat and group rows. */
 export interface CompositionForm {
   rows: RowFields[]
 }
@@ -49,7 +82,7 @@ const MODEL_KEYS: ReadonlySet<string> = new Set(['provider', 'model', 'reasoning
 const METADATA_KEYS: ReadonlySet<string> = new Set([
   'name', 'description', 'order', 'im', 'model', 'modelFallbacks',
 ])
-const ROW_KEYS: ReadonlySet<string> = new Set(['id', 'name', 'config', 'disabled'])
+const ROW_KEYS: ReadonlySet<string> = new Set(['id', 'name', 'group', 'config', 'disabled', 'isolate'])
 
 /** Coerce one parsed node into selection fields, or undefined when unusable. */
 function selectionFields(value: unknown): ModelSelectionFields | undefined {
@@ -130,19 +163,91 @@ export function renderMetadataForm(form: MetadataForm): string {
       ? {}
       : { modelFallbacks: form.modelFallbacks },
   }
-  return Object.keys(document).length === 0 ? '' : `${dump(document, { lineWidth: -1 })}`
+  return Object.keys(document).length === 0 ? '' : `${dump(document, { schema: ENTRY_SCHEMA, lineWidth: -1 })}`
+}
+
+/** Parse one stored row (and, recursively, its children) into form fields. */
+function parseRowFields(entry: unknown): RowFields | undefined {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return undefined
+  const record = entry as Record<string, unknown>
+  for (const key of Object.keys(record)) {
+    if (!ROW_KEYS.has(key)) return undefined
+  }
+  const { id, name, group, config, isolate, disabled } = record
+  // Draft-row semantics: empty ids and names round-trip, exactly like the
+  // metadata form's empty selection rows.
+  if (typeof id !== 'string' || typeof name !== 'string') return undefined
+  let children: RowFields[] | undefined
+  let rowConfig: unknown
+  if (group === true) {
+    // A group row's config is not plain config: it is the child-row list.
+    if (!Array.isArray(config)) return undefined
+    children = []
+    for (const child of config) {
+      const parsed = parseRowFields(child)
+      if (parsed === undefined) return undefined
+      children.push(parsed)
+    }
+  } else {
+    if (group !== undefined) return undefined
+    rowConfig = config
+  }
+  let disabledField: true | { js: string } | undefined
+  if (disabled === undefined || typeof disabled === 'boolean') {
+    disabledField = disabled === true ? true : undefined
+  } else if (isJsExprNode(disabled)) {
+    disabledField = { js: disabled.__jsExpr }
+  } else {
+    return undefined
+  }
+  return {
+    id,
+    name,
+    ...group === true ? { group: true } : {},
+    ...children === undefined ? {} : { children },
+    ...rowConfig === undefined ? {} : { config: rowConfig },
+    ...isolate === undefined ? {} : { isolate },
+    ...disabledField === undefined ? {} : { disabled: disabledField },
+  }
+}
+
+/** Render one row's fields back to its stored YAML record. */
+function renderRowFields(row: RowFields): Record<string, unknown> {
+  const disabled = row.disabled === undefined
+    ? {}
+    : typeof row.disabled === 'object'
+      ? { disabled: { __jsExpr: row.disabled.js } }
+      : { disabled: row.disabled }
+  if (row.group === true) {
+    return {
+      id: row.id,
+      name: row.name,
+      group: true,
+      ...row.isolate === undefined ? {} : { isolate: row.isolate },
+      config: (row.children ?? []).map(renderRowFields),
+      ...disabled,
+    }
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    ...row.isolate === undefined ? {} : { isolate: row.isolate },
+    ...row.config === undefined ? {} : { config: row.config },
+    ...disabled,
+  }
 }
 
 /**
  * Parse composition text into the form model.
  * @param text - the stored agent.cordis.yml contents.
  * @returns the form model, or undefined when any row uses a shape the form
- * would drop (group/isolate rows, nested children, `!!js` disabled gates).
+ * would drop (an unknown key, a malformed disabled gate, a group row whose
+ * config is not a child-row list).
  */
 export function parseCompositionForm(text: string): CompositionForm | undefined {
   let parsed: unknown
   try {
-    parsed = load(text)
+    parsed = load(text, { schema: ENTRY_SCHEMA })
   } catch {
     return undefined
   }
@@ -150,21 +255,9 @@ export function parseCompositionForm(text: string): CompositionForm | undefined 
   if (!Array.isArray(parsed)) return undefined
   const rows: RowFields[] = []
   for (const entry of parsed) {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return undefined
-    const record = entry as Record<string, unknown>
-    for (const key of Object.keys(record)) {
-      if (!ROW_KEYS.has(key)) return undefined
-    }
-    const { id, name, config, disabled } = record
-    if (typeof id !== 'string' || id === '') return undefined
-    if (typeof name !== 'string' || name === '') return undefined
-    if (disabled !== undefined && typeof disabled !== 'boolean') return undefined
-    rows.push({
-      id,
-      name,
-      ...config === undefined ? {} : { config },
-      ...disabled === true ? { disabled: true } : {},
-    })
+    const row = parseRowFields(entry)
+    if (row === undefined) return undefined
+    rows.push(row)
   }
   return { rows }
 }
@@ -176,12 +269,7 @@ export function parseCompositionForm(text: string): CompositionForm | undefined 
  */
 export function renderCompositionForm(form: CompositionForm): string {
   if (form.rows.length === 0) return ''
-  return `${dump(form.rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    ...row.config === undefined ? {} : { config: row.config },
-    ...row.disabled === true ? { disabled: true } : {},
-  })), { lineWidth: -1 })}`
+  return `${dump(form.rows.map(renderRowFields), { schema: ENTRY_SCHEMA, lineWidth: -1 })}`
 }
 
 /**
@@ -201,7 +289,7 @@ export function formRepresents(metadata: string, composition: string): boolean {
  * @throws when the snippet is not valid YAML.
  */
 export function parseConfigSnippet(text: string): unknown {
-  const parsed: unknown = load(text)
+  const parsed: unknown = load(text, { schema: ENTRY_SCHEMA })
   if (parsed === undefined) throw new Error('empty snippet')
   return parsed
 }
@@ -212,5 +300,5 @@ export function parseConfigSnippet(text: string): unknown {
  * @returns the snippet text to edit.
  */
 export function renderConfigSnippet(config: unknown): string {
-  return `${dump(config, { lineWidth: -1, indent: 2 })}`
+  return `${dump(config, { schema: ENTRY_SCHEMA, lineWidth: -1, indent: 2 })}`
 }

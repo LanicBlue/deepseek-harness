@@ -20,7 +20,8 @@ export type AgentPresetSettingsKey =
   | 'modelDefault' | 'modelUnset' | 'modelAdd' | 'modelRemove'
   | 'modelFallbacks' | 'fallbackAdd' | 'fallbackRemove'
   | 'rowId' | 'rowName' | 'rowConfig' | 'rowDisabled'
-  | 'rowAdd' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
+  | 'rowAdd' | 'rowAddChild' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
+  | 'rowGroup' | 'rowIsolate' | 'jsExpressionGate'
   | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
@@ -95,6 +96,10 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   rowConfig: 'Config (YAML)',
   rowDisabled: 'Disabled',
   rowAdd: '＋ plugin row',
+  rowAddChild: '＋ child row',
+  rowGroup: 'group',
+  rowIsolate: 'isolate (YAML)',
+  jsExpressionGate: 'JS gate:',
   rowRemove: 'Remove row',
   rowUp: 'Move up',
   rowDown: 'Move down',
@@ -184,6 +189,10 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   rowConfig: '配置（YAML）',
   rowDisabled: '禁用',
   rowAdd: '＋ 插件行',
+  rowAddChild: '＋ 子行',
+  rowGroup: '分组',
+  rowIsolate: 'isolate（YAML）',
+  jsExpressionGate: 'JS 门：',
   rowRemove: '移除该行',
   rowUp: '上移',
   rowDown: '下移',

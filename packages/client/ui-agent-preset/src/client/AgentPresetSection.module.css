@@ -541,6 +541,11 @@
   white-space: nowrap;
 }
 
+.groupLabel {
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .rowCard {
   display: grid;
   gap: 6px;
