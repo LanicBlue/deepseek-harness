@@ -86,25 +86,23 @@ export interface EditDraft {
   metadata: string
   /** Composition text — the single source of truth both modes edit. */
   composition: string
-  /** Whether the form or the raw text is showing. */
-  mode: 'form' | 'yaml'
+  /** Which face each file shows; the two files decide independently. */
+  metadataMode: 'form' | 'yaml'
+  compositionMode: 'form' | 'yaml'
   /** Whether the save is in flight. */
   saving: boolean
   /** Save failure text, on the dialog. */
   error: string | null
 }
 
-/**
- * Rebuild the editor's form view from its current texts.
- * @param draft - the open editor.
- * @returns the parsed form models, or null per document the form cannot
- * represent (the caller then refuses the form switch for it).
- */
-function formsOf(draft: EditDraft): { metadata: MetadataForm; composition: CompositionForm } | null {
-  const metadata = parseMetadataForm(draft.metadata)
-  const composition = parseCompositionForm(draft.composition)
-  if (metadata === undefined || composition === undefined) return null
-  return { metadata, composition }
+/** The metadata form for a draft, or null when the text is not representable. */
+function metadataFormOf(draft: EditDraft): MetadataForm | null {
+  return parseMetadataForm(draft.metadata) ?? null
+}
+
+/** The composition form for a draft, or null when the text is not representable. */
+function compositionFormOf(draft: EditDraft): CompositionForm | null {
+  return parseCompositionForm(draft.composition) ?? null
 }
 
 /** Page snapshot. */
@@ -269,11 +267,17 @@ export class AgentPresetSectionController {
   beginEdit(): void {
     const view = this.store.getSnapshot().view
     if (view === null || view.trust !== 'user') return
-    const mode = parseMetadataForm(view.metadata) !== undefined
-      && parseCompositionForm(view.content) !== undefined
-      ? 'form'
-      : 'yaml'
-    this.set({ edit: { id: view.id, metadata: view.metadata, composition: view.content, mode, saving: false, error: null } })
+    this.set({
+      edit: {
+        id: view.id,
+        metadata: view.metadata,
+        composition: view.content,
+        metadataMode: parseMetadataForm(view.metadata) !== undefined ? 'form' : 'yaml',
+        compositionMode: parseCompositionForm(view.content) !== undefined ? 'form' : 'yaml',
+        saving: false,
+        error: null,
+      },
+    })
   }
 
   /** Close the editor, discarding whatever was typed. */
@@ -310,11 +314,20 @@ export class AgentPresetSectionController {
    * text just shows what the form has been serializing all along.
    * @param mode - the mode to show.
    */
-  setEditMode(mode: 'form' | 'yaml'): void {
+  setEditMode(file: 'metadata' | 'composition', mode: 'form' | 'yaml'): void {
     const { edit } = this.store.getSnapshot()
-    if (edit === null || edit.saving || edit.mode === mode) return
-    if (mode === 'form' && formsOf(edit) === null) return
-    this.set({ edit: { ...edit, mode, error: null } })
+    if (edit === null || edit.saving) return
+    const current = file === 'metadata' ? edit.metadataMode : edit.compositionMode
+    if (current === mode) return
+    if (mode === 'form'
+      && (file === 'metadata' ? metadataFormOf(edit) : compositionFormOf(edit)) === null) return
+    this.set({
+      edit: {
+        ...edit,
+        ...(file === 'metadata' ? { metadataMode: mode } : { compositionMode: mode }),
+        error: null,
+      },
+    })
   }
 
   /**
@@ -324,14 +337,14 @@ export class AgentPresetSectionController {
    */
   patchMetadataForm(patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }): void {
     const { edit } = this.store.getSnapshot()
-    if (edit === null || edit.saving || edit.mode !== 'form') return
-    const forms = formsOf(edit)
-    if (forms === null) return
+    if (edit === null || edit.saving || edit.metadataMode !== 'form') return
+    const current = metadataFormOf(edit)
+    if (current === null) return
     // A copy under Record-typed keys with omitted-absent spread, rather
     // than dynamic deletes: renderMetadataForm only reads present fields.
     const patchKeys = new Set(Object.keys(patch))
     const next: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(forms.metadata)) {
+    for (const [key, value] of Object.entries(current)) {
       if (!patchKeys.has(key) && value !== undefined) next[key] = value
     }
     for (const [key, value] of Object.entries(patch)) {
@@ -348,11 +361,11 @@ export class AgentPresetSectionController {
    */
   patchCompositionForm(patch: Partial<CompositionForm>): void {
     const { edit } = this.store.getSnapshot()
-    if (edit === null || edit.saving || edit.mode !== 'form') return
-    const forms = formsOf(edit)
-    if (forms === null) return
+    if (edit === null || edit.saving || edit.compositionMode !== 'form') return
+    const current = compositionFormOf(edit)
+    if (current === null) return
     this.set({
-      edit: { ...edit, composition: renderCompositionForm({ ...forms.composition, ...patch }), error: null },
+      edit: { ...edit, composition: renderCompositionForm({ ...current, ...patch }), error: null },
     })
   }
 

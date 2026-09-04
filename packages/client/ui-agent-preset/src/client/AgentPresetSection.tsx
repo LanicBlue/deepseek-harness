@@ -47,8 +47,8 @@ export interface AgentPresetSectionInjected {
   setEditComposition: (composition: string) => void
   /** Save the drafts, then converge the page on the stored result. */
   saveEdit: () => Promise<void>
-  /** Switch the editor between the form and the raw text. */
-  setEditMode: (mode: 'form' | 'yaml') => void
+  /** Switch one file's face between the form and the raw text. */
+  setEditMode: (file: 'metadata' | 'composition', mode: 'form' | 'yaml') => void
   /** Patch the metadata form fields (form mode only); undefined clears. */
   patchMetadataForm: (patch: { [K in keyof MetadataForm]?: MetadataForm[K] | undefined }) => void
   /** Patch the composition form fields (form mode only). */
@@ -467,21 +467,20 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const currentCompositionText = state.edit?.composition ?? state.view?.content ?? ''
   const metadataForm = parseMetadataForm(currentMetadataText)
   const compositionForm = parseCompositionForm(currentCompositionText)
-  // The form switch is offered only when BOTH documents round-trip; a
-  // composition with group rows or a metadata key the form does not know
-  // stays YAML-only rather than silently dropping content on save.
-  const representable = metadataForm !== undefined && compositionForm !== undefined
-  const formMode = !editing || state.edit?.mode === 'form'
+  // Each file decides its own face: the metadata round-trips for almost
+  // every preset, while compositions with group rows stay YAML. The form
+  // is offered per file only when that file round-trips exactly.
+  const editingMetadata = editing && state.edit?.metadataMode === 'form'
+  const editingComposition = editing && state.edit?.compositionMode === 'form'
   useEffect(() => {
-    const mode = state.edit?.mode
-    if (!editing || mode !== 'form') return
+    if (!editing || state.edit?.metadataMode !== 'form') return
     let alive = true
     void props.modelProviders().then((result) => {
       if (alive) setProviders(result)
     }).catch(() => { /* selects fall back to free text */ })
     return () => { alive = false }
     // Providers load once per editor session; the texts drive everything else.
-  }, [editing, state.edit?.mode])
+  }, [editing, state.edit?.metadataMode])
 
   useEffect(() => {
     void load()
@@ -742,33 +741,46 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                   </button>
                 ),
               )}
-              {editing && representable ? (
-                <span className={css.spacer} />
-              ) : null}
-              {representable ? (
-                <button
-                  type="button"
-                  className={css.viewerTab}
-                  aria-pressed={formMode}
-                  onClick={() => { if (editing) props.setEditMode(formMode ? 'yaml' : 'form') }}
-                >
-                  {formMode ? `_yaml_ ${t('modeYaml')}` : `${t('modeForm')}`}
-                </button>
-              ) : editing ? (
-                <span className={css.viewerTab} title={t('formUnavailable')}>{t('modeYaml')}</span>
-              ) : null}
+              <span className={css.spacer} />
+              {(() => {
+                const representable = viewerTab === 'composition'
+                  ? compositionForm !== undefined
+                  : metadataForm !== undefined
+                if (!representable) {
+                  return <span className={css.viewerTab} title={t('formUnavailable')}>{t('modeYaml')}</span>
+                }
+                const inForm = viewerTab === 'composition'
+                  ? (editingComposition || !editing)
+                  : (editingMetadata || !editing)
+                return (
+                  <button
+                    type="button"
+                    className={css.viewerTab}
+                    aria-pressed={inForm}
+                    onClick={() => {
+                      if (!editing) return
+                      props.setEditMode(
+                        viewerTab === 'composition' ? 'composition' : 'metadata',
+                        inForm ? 'yaml' : 'form',
+                      )
+                    }}
+                  >
+                    {inForm ? t('modeYaml') : t('modeForm')}
+                  </button>
+                )
+              })()}
             </div>
             {viewerTab === 'composition'
-              ? (formMode && representable
-                ? compositionForm === undefined ? null : (
+              ? (compositionForm !== undefined && (editingComposition || !editing)
+                ? (
                   <CompositionFormFields
                     t={t} readOnly={!editing} value={compositionForm}
                     patchComposition={props.patchCompositionForm}
                   />
                 )
                 : <pre className={css.viewerCode}>{currentCompositionText}</pre>)
-              : (formMode && representable
-                ? metadataForm === undefined ? null : (
+              : (metadataForm !== undefined && (editingMetadata || !editing)
+                ? (
                   <MetadataFormFields
                     t={t} readOnly={!editing} value={metadataForm} providers={providers}
                     patchMetadata={props.patchMetadataForm}

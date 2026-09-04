@@ -639,7 +639,8 @@ describe('the form-mode editor', () => {
     await controller.view('mine')
 
     controller.beginEdit()
-    expect(controller.store.getSnapshot().edit?.mode).toBe('form')
+    expect(controller.store.getSnapshot().edit?.metadataMode).toBe('form')
+    expect(controller.store.getSnapshot().edit?.compositionMode).toBe('form')
 
     // A group row pins the composition to YAML: the editor refuses the form.
     const grouped = harness()
@@ -647,9 +648,12 @@ describe('the form-mode editor', () => {
     await grouped.controller.load()
     await grouped.controller.view('mine')
     grouped.controller.beginEdit()
-    expect(grouped.controller.store.getSnapshot().edit?.mode).toBe('yaml')
-    grouped.controller.setEditMode('form')
-    expect(grouped.controller.store.getSnapshot().edit?.mode).toBe('yaml')
+    // The group row pins only the COMPOSITION to YAML; the metadata form
+    // still opens.
+    expect(grouped.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
+    expect(grouped.controller.store.getSnapshot().edit?.metadataMode).toBe('form')
+    grouped.controller.setEditMode('composition', 'form')
+    expect(grouped.controller.store.getSnapshot().edit?.compositionMode).toBe('yaml')
   })
 
   it('serializes form patches back into the draft text', async () => {

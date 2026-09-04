@@ -184,7 +184,9 @@ export function apply(ctx: ClientContext): void {
     setEditMetadata: (metadata: string) => { section.setEditMetadata(metadata) },
     setEditComposition: (composition: string) => { section.setEditComposition(composition) },
     saveEdit: () => section.saveEdit(),
-    setEditMode: (mode: 'form' | 'yaml') => { section.setEditMode(mode) },
+    setEditMode: (file: 'metadata' | 'composition', mode: 'form' | 'yaml') => {
+      section.setEditMode(file, mode)
+    },
     patchMetadataForm: (patch) => { section.patchMetadataForm(patch) },
     patchCompositionForm: (patch) => { section.patchCompositionForm(patch) },
     modelProviders: async () => {
