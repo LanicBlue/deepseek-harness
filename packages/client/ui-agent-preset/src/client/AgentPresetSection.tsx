@@ -453,66 +453,65 @@ function GateCell({ row, readOnly, t, onChange }: {
   )
 }
 
-/** One schema-typed config value as the control its kind reads as: booleans
-   are checkboxes, enums selects, numbers number inputs, prompts textareas,
-   `!!js` nodes expression inputs. */
-function SchemaValueCell({ name, field, value, readOnly, onChange }: {
-  /** The config key; the control's accessible name. */
+/** One schema field as an inline control chip on the row's own line:
+   checkbox beside its key for booleans, key beside the control for
+   selects, numbers, and short text. */
+function InlineWidget({ name, field, value, readOnly, onChange }: {
   name: string
   field: ConfigField
   value: unknown
   readOnly: boolean
   onChange: (next: unknown) => void
 }): ReactNode {
-  const onText = (event: { target: { value: string } }): void => { onChange(event.target.value) }
-  switch (field.kind) {
-    case 'boolean':
-      return (
-        <input type="checkbox" className={css.gateCheck} checked={value === true} disabled={readOnly} aria-label={name}
+  if (field.kind === 'boolean') {
+    return (
+      <label className={css.inlineCheck}>
+        <input type="checkbox" checked={value === true} disabled={readOnly} aria-label={name}
           onChange={(event) => { onChange(event.target.checked) }} />
-      )
-    case 'enum': {
-      const current = typeof value === 'string' ? value : ''
-      const options = field.options.includes(current) || current === ''
-        ? field.options
-        : [current, ...field.options]
-      return (
-        <select className={css.cellInput} value={current} disabled={readOnly} aria-label={name} onChange={onText}>
+        <span className={css.inlineKey}>{name}</span>
+      </label>
+    )
+  }
+  if (field.kind === 'enum') {
+    const current = typeof value === 'string' ? value : ''
+    const options = field.options.includes(current) || current === ''
+      ? field.options
+      : [current, ...field.options]
+    return (
+      <label className={css.inlineField}>
+        <span className={css.inlineKey}>{name}</span>
+        <select className={`${css.inlineInput} ${css.inputMono}`} value={current} disabled={readOnly} aria-label={name}
+          onChange={(event) => { onChange(event.target.value) }}>
           {current === '' ? <option value="" /> : null}
           {options.map(option => <option key={option} value={option}>{option}</option>)}
         </select>
-      )
-    }
-    case 'number':
-      return (
-        <input type="number" className={`${css.cellInput} ${css.inputMono}`} value={typeof value === 'number' ? value : ''} readOnly={readOnly}
-          spellCheck={false} aria-label={name}
+      </label>
+    )
+  }
+  if (field.kind === 'number') {
+    return (
+      <label className={css.inlineField}>
+        <span className={css.inlineKey}>{name}</span>
+        <input type="number" className={`${css.inlineInput} ${css.inputMono}`} value={typeof value === 'number' ? value : ''}
+          readOnly={readOnly} spellCheck={false} aria-label={name}
           onChange={(event) => {
             const parsed = Number(event.target.value)
             if (event.target.value !== '' && Number.isFinite(parsed)) onChange(parsed)
           }} />
-      )
-    case 'text':
-      return (
-        <input className={css.cellInput} value={typeof value === 'string' ? value : ''} readOnly={readOnly} spellCheck={false}
-          aria-label={name} onChange={onText} />
-      )
-    case 'prompt':
-      return (
-        <textarea className={css.cellArea} style={{ minHeight: 72 }} value={typeof value === 'string' ? value : ''}
-          readOnly={readOnly} spellCheck={false} aria-label={name} onChange={onText} />
-      )
-    case 'js':
-      return (
-        <span className={css.gateLine}>
-          <code className={css.jsBadge} aria-hidden="true">!!js</code>
-          <input className={`${css.cellInput} ${css.inputMono}`} value={isJsExprNode(value) ? value.__jsExpr : ''} readOnly={readOnly}
-            spellCheck={false} aria-label={name} onChange={(event) => { onChange({ __jsExpr: event.target.value }) }} />
-        </span>
-      )
-    case 'advanced':
-      return null
+      </label>
+    )
   }
+  if (field.kind === 'text') {
+    return (
+      <label className={css.inlineField}>
+        <span className={css.inlineKey}>{name}</span>
+        <input className={`${css.inlineInput} ${css.inputMono}`} value={typeof value === 'string' ? value : ''}
+          readOnly={readOnly} spellCheck={false} aria-label={name}
+          onChange={(event) => { onChange(event.target.value) }} />
+      </label>
+    )
+  }
+  return null
 }
 
 /** The plugin package picker: a select over the known packages, with a
@@ -810,7 +809,14 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
   const isolateSnippet = useSnippetField(row, 'isolate', onChange)
   const classified = classifyConfig(row.name, row.config)
   const advancedKeys = Object.keys(classified.advanced)
+  const [advOpen, setAdvOpen] = useState(false)
   const patchConfig = (next: unknown): void => { onChange({ ...row, config: next }) }
+  const inlineWidgets = classified.fields.filter(f => f.field.kind !== 'prompt' && f.field.kind !== 'advanced')
+  const promptFields = classified.fields.filter(f => f.field.kind === 'prompt')
+  const gate = typeof row.disabled === 'object' ? row.disabled : undefined
+  const isolateEntries = isKeyMap(row.isolate) ? Object.entries(row.isolate) : []
+  const isolateBools = isolateEntries.filter(([, value]) => typeof value === 'boolean')
+  const showAdvChip = !classified.mapped || advancedKeys.length > 0 || !readOnly
   return (
     <div className={css.rowCard}>
       <div className={css.rowLine}>
@@ -830,41 +836,56 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
             row={row} readOnly={readOnly} t={t} packageListId={packageListId} onChange={onChange}
           />
         )}
+        <span className={css.inlineCfg}>
+          {gate ? (
+            <input
+              className={`${css.inlineInput} ${css.inlineExpr} ${css.inputMono}`}
+              value={gate.js}
+              readOnly={readOnly}
+              spellCheck={false}
+              aria-label={t('jsExpressionGate')}
+              title={`${t('jsExpressionGate')} ${gate.js}`}
+              onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
+            />
+          ) : null}
+          {isolateBools.map(([key, value]) => (
+            <label key={key} className={css.inlineCheck}>
+              <input type="checkbox" checked={value === true} disabled={readOnly} aria-label={key}
+                onChange={(event) => {
+                  const isolate = { ...(row.isolate as Record<string, unknown>), [key]: event.target.checked }
+                  onChange({ ...row, isolate })
+                }} />
+              <span className={css.inlineKey}>{key}</span>
+            </label>
+          ))}
+          {inlineWidgets.map(({ field, value }) => (
+            <InlineWidget
+              key={field.key} name={field.key} field={field} value={value} readOnly={readOnly}
+              onChange={(next) => { patchConfig({ ...(row.config as Record<string, unknown>), [field.key]: next }) }}
+            />
+          ))}
+          {showAdvChip ? (
+            <button type="button" className={css.advChip} aria-expanded={advOpen}
+              onClick={() => { setAdvOpen(!advOpen) }}>
+              {t('advancedLabel')}{advancedKeys.length > 0 ? ` · ${advancedKeys.length}` : ''}
+            </button>
+          ) : null}
+        </span>
         <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
       </div>
-      {typeof row.disabled === 'object' ? (
-        <div className={css.gateLine}>
-          <code className={css.jsBadge} aria-hidden="true">!!js</code>
-          <input
-            className={`${css.cellInput} ${css.inputMono}`}
-            value={row.disabled.js}
-            readOnly={readOnly}
-            spellCheck={false}
-            aria-label={t('jsExpressionGate')}
-            onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
-          />
-        </div>
-      ) : null}
-      {row.group === undefined && classified.fields.length > 0 ? (
-        <div className={css.keyRows}>
-          {classified.fields.map(({ field, value }) => (
-            <div key={field.key} className={css.keyRow}>
-              <span className={css.keyName} title={field.key}>{field.key}</span>
-              <span className={css.keyValue}>
-                <SchemaValueCell
-                  name={field.key} field={field} value={value} readOnly={readOnly}
-                  onChange={(next) => { patchConfig({ ...(row.config as Record<string, unknown>), [field.key]: next }) }}
-                />
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {row.group === undefined && (!readOnly || !classified.mapped || advancedKeys.length > 0) ? (
-        <details className={css.advFold}>
-          <summary className={css.advHead}>
-            {t('advancedLabel')}{advancedKeys.length > 0 ? ` · ${advancedKeys.length}` : ''}
-          </summary>
+      {promptFields.map(({ field, value }) => (
+        <textarea
+          key={field.key}
+          className={css.promptArea}
+          value={typeof value === 'string' ? value : ''}
+          readOnly={readOnly}
+          spellCheck={false}
+          aria-label={field.key}
+          onChange={(event) => { patchConfig({ ...(row.config as Record<string, unknown>), [field.key]: event.target.value }) }}
+        />
+      ))}
+      {advOpen ? (
+        <div className={css.belowArea}>
           {!classified.mapped ? (
             <>
               <SnippetField
@@ -876,25 +897,17 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
           ) : (
             <KeyValueFields heading="" record={classified.advanced} readOnly={readOnly} t={t} onPatch={patchConfig} />
           )}
-        </details>
+        </div>
       ) : null}
-      {isKeyMap(row.isolate) ? (
-        <KeyValueFields
-          heading={t('isolateKeysLabel')}
-          record={row.isolate}
-          readOnly={readOnly}
-          t={t}
-          onPatch={(next) => { onChange({ ...row, isolate: next }) }}
-        />
-      ) : row.isolate === undefined ? null : (
-        <>
+      {row.isolate !== undefined && !isKeyMap(row.isolate) ? (
+        <div className={css.belowArea}>
           <SnippetField
             label={t('isolateKeysLabel')} value={isolateSnippet.shown} error={isolateSnippet.error} readOnly={readOnly} t={t}
             onChange={isolateSnippet.setText} onCommit={isolateSnippet.commit}
           />
           {isolateSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
-        </>
-      )}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -912,6 +925,7 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
   packageListId: string | undefined
 }): ReactNode {
   const isolateSnippet = useSnippetField(row, 'isolate', onChange)
+  const [open, setOpen] = useState(false)
   const patchChild = (childIndex: number, next: RowFields): void => {
     const children = (row.children ?? []).map((current, i) => i === childIndex ? next : current)
     onChange({ ...row, children })
@@ -925,14 +939,20 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
     if (moved !== undefined) next.splice(target, 0, moved)
     onChange({ ...row, children: next })
   }
+  const gate = typeof row.disabled === 'object' ? row.disabled : undefined
+  const isolateEntries = isKeyMap(row.isolate) ? Object.entries(row.isolate) : []
+  const isolateBools = isolateEntries.filter(([, value]) => typeof value === 'boolean')
+  const isolateRest = isolateEntries.filter(([, value]) => typeof value !== 'boolean')
+  const showIsolateSnippet = row.isolate !== undefined && !isKeyMap(row.isolate)
   return (
     <div className={`${css.rowCard} ${css.rowGroupCard}`}>
-      <details open className={css.rowGroup}>
+      <details open={open} className={css.rowGroup}>
         {/* The header IS the group's own row line: clicks on its inputs must fold nothing. */}
         <summary
           className={css.rowGroupHead}
           onClick={(event) => {
-            if ((event.target as HTMLElement).closest('input, textarea, button') !== null) event.preventDefault()
+            event.preventDefault()
+            if ((event.target as HTMLElement).closest('input, textarea, button') === null) setOpen(!open)
           }}
         >
           <span className={css.chev} aria-hidden="true">▸</span>
@@ -947,31 +967,39 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
             onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
           />
           <span className={css.groupChip} title={row.name}>{row.name}</span>
-          <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
-        </summary>
-        <div className={css.rowGroupBody}>
-          {typeof row.disabled === 'object' ? (
-            <div className={css.gateLine}>
-              <code className={css.jsBadge} aria-hidden="true">!!js</code>
+          <span className={css.inlineCfg}>
+            {gate ? (
               <input
-                className={`${css.cellInput} ${css.inputMono}`}
-                value={row.disabled.js}
+                className={`${css.inlineInput} ${css.inlineExpr} ${css.inputMono}`}
+                value={gate.js}
                 readOnly={readOnly}
                 spellCheck={false}
                 aria-label={t('jsExpressionGate')}
+                title={`${t('jsExpressionGate')} ${gate.js}`}
                 onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
               />
-            </div>
-          ) : null}
-          {isKeyMap(row.isolate) ? (
-            <KeyValueFields
-              heading={t('isolateKeysLabel')}
-              record={row.isolate}
-              readOnly={readOnly}
-              t={t}
-              onPatch={(next) => { onChange({ ...row, isolate: next }) }}
-            />
-          ) : row.isolate === undefined ? null : (
+            ) : null}
+            <span className={css.groupCount}>{(row.children ?? []).length}</span>
+            {isolateBools.map(([key, value]) => (
+              <label key={key} className={css.inlineCheck}>
+                <input
+                  type="checkbox"
+                  checked={value === true}
+                  disabled={readOnly}
+                  aria-label={key}
+                  onChange={(event) => {
+                    const isolate = { ...(row.isolate as Record<string, unknown>), [key]: event.target.checked }
+                    onChange({ ...row, isolate })
+                  }}
+                />
+                <span className={css.inlineKey}>{key}</span>
+              </label>
+            ))}
+          </span>
+          <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
+        </summary>
+        <div className={css.rowGroupBody}>
+          {showIsolateSnippet ? (
             <>
               <SnippetField
                 label={t('isolateKeysLabel')} value={isolateSnippet.shown} error={isolateSnippet.error} readOnly={readOnly} t={t}
@@ -979,7 +1007,7 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
               />
               {isolateSnippet.error ? <p className={css.error} role="alert">{t('configInvalid')}</p> : null}
             </>
-          )}
+          ) : null}
           {(row.children ?? []).map((child, childIndex) => (
             <RowFieldsInput
               key={childIndex}
@@ -1004,6 +1032,17 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
             </button>
           ) : null}
         </div>
+        {isolateRest.length > 0 ? (
+          <div className={css.belowArea}>
+            <KeyValueFields
+              heading={t('isolateKeysLabel')}
+              record={Object.fromEntries(isolateRest)}
+              readOnly={readOnly}
+              t={t}
+              onPatch={(next) => { onChange({ ...row, isolate: next }) }}
+            />
+          </div>
+        ) : null}
       </details>
     </div>
   )
@@ -1098,6 +1137,7 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
               <span>{t('rowHeadEnabled')}</span>
               <span>{t('rowHeadId')}</span>
               <span>{t('rowHeadPackage')}</span>
+              <span>{t('configKeysLabel')}</span>
               <span />
             </div>
             {list.map(entry => renderRow(entry))}
@@ -1373,7 +1413,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
         title={viewedTitle === '' ? t('view') : `${t('view')} · ${viewedTitle}`}
         closeLabel={t('close')}
         description={t('composition')}
-        className={css.dialog as string}
+        className={`${css.dialog} ${css.viewDialog}`}
         footer={state.edit === null ? (
           <>
             {state.view?.trust === 'user' ? (
