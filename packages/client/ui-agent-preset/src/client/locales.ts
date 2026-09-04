@@ -23,6 +23,7 @@ export type AgentPresetSettingsKey =
   | 'rowHeadEnabled' | 'rowHeadId' | 'rowHeadPackage'
   | 'configKeysLabel' | 'isolateKeysLabel'
   | 'advancedLabel' | 'packageCustom' | 'packagePlaceholder' | 'packagePick'
+  | 'modulePrompt' | 'moduleTools' | 'moduleRuntime'
   | 'keyRemove' | 'keyAdd' | 'keyNamePlaceholder' | 'keyValuePlaceholder' | 'keyExists'
   | 'rowAdd' | 'rowAddChild' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
   | 'rowGroup' | 'jsExpressionGate'
@@ -107,6 +108,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   packageCustom: 'Custom package…',
   packagePlaceholder: 'Choose a package',
   packagePick: 'Pick from the list',
+  modulePrompt: 'Prompt',
+  moduleTools: 'Tools',
+  moduleRuntime: 'Runtime',
   keyRemove: 'Remove this key',
   keyAdd: '＋ config key',
   keyNamePlaceholder: 'key',
@@ -212,6 +216,9 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   packageCustom: '自定义包名…',
   packagePlaceholder: '选择插件包',
   packagePick: '从列表选择',
+  modulePrompt: '提示词',
+  moduleTools: '工具',
+  moduleRuntime: '运行时',
   keyRemove: '移除该键',
   keyAdd: '＋ 配置键',
   keyNamePlaceholder: '键名',

@@ -502,6 +502,28 @@
   gap: 10px;
 }
 
+/* The semantic modules of one composition: prompt, tools, runtime, and the
+   advanced catch-all — each a table over the shared row grid. */
+.module {
+  display: grid;
+  gap: 8px;
+}
+
+.module + .module {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.moduleHead {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .editorField {
   display: grid;
   gap: 5px;

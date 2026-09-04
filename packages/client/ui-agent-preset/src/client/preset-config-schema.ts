@@ -12,6 +12,7 @@
  */
 
 import { isJsExprNode, isKeyMap } from './preset-forms.ts'
+import type { RowFields } from './preset-forms.ts'
 
 /** One known config key and the control it is edited with. */
 export type ConfigField =
@@ -103,6 +104,7 @@ export const PACKAGE_SCHEMAS: Readonly<Record<string, PackageSchema>> = {
   '@deepseek-ai/dsh-agent-tool-presentation': {
     fields: [{ key: 'mode', kind: 'enum', options: ['native', 'ptc', 'both'] }],
   },
+  '@deepseek-ai/dsh-compaction-basic': { fields: [] },
   '@deepseek-ai/dsh-compaction-tool-result-pruner': {
     fields: [
       { key: 'thresholdChars', kind: 'number' },
@@ -195,4 +197,34 @@ export function classifyConfig(name: string, config: unknown): ClassifiedConfig 
     if (!covered.has(key)) advanced[key] = config[key]
   }
   return { fields, advanced, mapped: true }
+}
+
+/** The semantic modules the composition form groups its rows into. */
+export type RowModule = 'prompt' | 'tools' | 'runtime' | 'advanced'
+
+/** Fixed display order; a module with no rows is not rendered. */
+export const MODULE_ORDER: readonly RowModule[] = ['prompt', 'tools', 'runtime', 'advanced']
+
+/** Packages whose row IS prompt text for the model. */
+const PROMPT_PACKAGES: ReadonlySet<string> = new Set([
+  '@deepseek-ai/dsh-persona',
+  '@deepseek-ai/dsh-plan-mode',
+  '@deepseek-ai/dsh-agent-instructions',
+])
+
+/** One module per row, from its content alone — the stored row order and
+   bytes are untouched; this only decides which section renders the row. */
+export function moduleOf(row: RowFields): RowModule {
+  if (row.group === true) {
+    for (const child of row.children ?? []) {
+      const module = moduleOf(child)
+      if (module !== 'advanced') return module
+    }
+    return 'tools'
+  }
+  const name = row.name
+  if (PROMPT_PACKAGES.has(name)) return 'prompt'
+  if (/@deepseek-ai\/dsh-(tool-|terminal|fs|skill-|command-)/.test(name)) return 'tools'
+  if (name in PACKAGE_SCHEMAS) return 'runtime'
+  return 'advanced'
 }

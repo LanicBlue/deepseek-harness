@@ -23,8 +23,8 @@ import {
   type CompositionForm, type MetadataForm, type ModelSelectionFields, type RowFields,
 } from './preset-forms.ts'
 import {
-  KNOWN_PACKAGES, classifyConfig, shortPackageId,
-  type ConfigField,
+  KNOWN_PACKAGES, MODULE_ORDER, classifyConfig, moduleOf, shortPackageId,
+  type ConfigField, type RowModule,
 } from './preset-config-schema.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetSection.module.css'
@@ -1040,45 +1040,70 @@ function CompositionFormFields({ t, readOnly, patchComposition, value }: FormFie
   }
   const packageNames = new Set<string>(KNOWN_PACKAGES)
   collectPackageNames(rows, packageNames)
+  // The four semantic modules are a pure view over the stored row order:
+  // rows keep their indices and bytes, the sections only decide placement.
+  const moduleRows = new Map<RowModule, { row: RowFields; index: number }[]>()
+  rows.forEach((row, index) => {
+    const module = moduleOf(row)
+    const list = moduleRows.get(module) ?? []
+    list.push({ row, index })
+    moduleRows.set(module, list)
+  })
+  const moduleKey: Record<RowModule, AgentPresetSettingsKey> = {
+    prompt: 'modulePrompt',
+    tools: 'moduleTools',
+    runtime: 'moduleRuntime',
+    advanced: 'advancedLabel',
+  }
+  const renderRow = ({ row, index }: { row: RowFields; index: number }): ReactNode => (
+    row.group === true ? (
+      <GroupRowFieldsInput
+        row={row}
+        index={index}
+        total={rows.length}
+        readOnly={readOnly}
+        t={t}
+        packageListId={PACKAGE_DATALIST_ID}
+        onChange={(next) => { patchRow(index, next) }}
+        onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
+        onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
+      />
+    ) : (
+      <RowFieldsInput
+        row={row}
+        index={index}
+        total={rows.length}
+        readOnly={readOnly}
+        t={t}
+        packageListId={PACKAGE_DATALIST_ID}
+        onChange={(next) => { patchRow(index, next) }}
+        onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
+        onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
+      />
+    )
+  )
   return (
     <div className={`${css.editorFields} ${readOnly ? css.rowListRead : css.rowListEdit}`}>
       <datalist id={PACKAGE_DATALIST_ID}>
         {Array.from(packageNames, name => <option key={name} value={name} />)}
       </datalist>
-      <div className={css.rowColHead} aria-hidden="true">
-        <span />
-        <span>{t('rowHeadEnabled')}</span>
-        <span>{t('rowHeadId')}</span>
-        <span>{t('rowHeadPackage')}</span>
-        <span />
-      </div>
-      {rows.map((row, index) => row.group === true ? (
-        <GroupRowFieldsInput
-          key={index}
-          row={row}
-          index={index}
-          total={rows.length}
-          readOnly={readOnly}
-          t={t}
-          packageListId={PACKAGE_DATALIST_ID}
-          onChange={(next) => { patchRow(index, next) }}
-          onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
-          onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
-        />
-      ) : (
-        <RowFieldsInput
-          key={index}
-          row={row}
-          index={index}
-          total={rows.length}
-          readOnly={readOnly}
-          t={t}
-          packageListId={PACKAGE_DATALIST_ID}
-          onChange={(next) => { patchRow(index, next) }}
-          onRemove={() => { setRows(rows.filter((_, i) => i !== index)) }}
-          onMove={(delta) => { setRows(moveRow(rows, index, delta)) }}
-        />
-      ))}
+      {MODULE_ORDER.map((module) => {
+        const list = moduleRows.get(module)
+        if (list === undefined || list.length === 0) return null
+        return (
+          <section key={module} className={css.module}>
+            <h4 className={css.moduleHead}>{t(moduleKey[module])}</h4>
+            <div className={css.rowColHead} aria-hidden="true">
+              <span />
+              <span>{t('rowHeadEnabled')}</span>
+              <span>{t('rowHeadId')}</span>
+              <span>{t('rowHeadPackage')}</span>
+              <span />
+            </div>
+            {list.map(entry => renderRow(entry))}
+          </section>
+        )
+      })}
       {!readOnly ? (
         <button type="button" className={`${css.secondaryButton} ${css.addRowButton}`}
           onClick={() => { setRows([...rows, { id: '', name: '' }]) }}>
