@@ -587,38 +587,56 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
-/* One line per row under one set of column headers: chevron, enabled, id,
-   package, inline config, tools. The config controls live ON the line so a
-   tool reads as one row; whatever cannot be inline (prompt text, the
-   advanced fold) renders in a bounded area below the line. */
-.rowLine,
-.rowGroupHead,
-.rowColHead {
+/* Tools lay out as a matrix of parameter tiles: each tile is one tool — a
+   switch+id header, then its config grouped by the parameter's character
+   (toggle cluster, key+control lines, expression lines, prompt text). A
+   tile whose content needs the full row (prompt texts, group sections)
+   spans every column. */
+.tileGrid {
   display: grid;
-  grid-template-columns: 14px 34px minmax(64px, .9fr) minmax(140px, 1.3fr) minmax(0, 2fr) 0;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.tileWide {
+  grid-column: 1 / -1;
+}
+
+/* A tile's header: the enabled switch, the identifier, the row tools. */
+.tileHead {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.rowListEdit .rowLine,
-.rowListEdit .rowGroupHead,
-.rowListEdit .rowColHead {
-  grid-template-columns: 14px 34px minmax(64px, .9fr) minmax(140px, 1.3fr) minmax(0, 2fr) 76px;
+.tileHead .cellInput {
+  flex: 1;
+  min-width: 0;
 }
 
-/* Escape the card's side padding: the header, the top-level rows, and the
-   group headers all share one left edge, so the columns read as one table. */
-.rowLine {
-  margin: 0 -10px;
+.tileHead .rowTools {
+  margin-left: auto;
 }
 
-.rowColHead {
-  padding: 0 2px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--dsw-alias-label-tertiary);
+/* The tile's config body: whatever the parameters call for. */
+.tileCfg {
+  display: grid;
+  gap: 6px;
+}
+
+.paramLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.paramLine .inlineInput {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
 .chev {
@@ -654,22 +672,6 @@
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 10px;
   white-space: nowrap;
-}
-
-/* The group's package slot is a constant in practice (`cordis:group`); it
-   reads as a chip rather than an input. */
-.groupChip {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-1);
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11.5px;
 }
 
 /* The compact cell inputs of the row lines and key grids. */
@@ -721,14 +723,6 @@
 
 /* The inline config zone of a row line: key-typed controls as compact
    chips — checkbox+key for booleans, key+control for the rest. */
-.inlineCfg {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  min-width: 0;
-}
-
 .inlineCheck {
   display: inline-flex;
   align-items: center;
@@ -994,9 +988,26 @@
 }
 
 .rowGroupHead {
-  padding: 8px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
   cursor: pointer;
   list-style: none;
+}
+
+.rowGroupHead .cellInput {
+  flex: 0 1 auto;
+  width: 180px;
+}
+
+.rowGroupHead .rowTools {
+  margin-left: auto;
+}
+
+.rowGroupHead .toggleRow {
+  flex: 1;
+  min-width: 0;
 }
 
 .rowGroupHead::-webkit-details-marker {
@@ -1012,7 +1023,7 @@
 .rowGroupBody {
   display: grid;
   gap: 8px;
-  margin: 10px 12px 10px 18px;
+  margin: 8px 10px 10px 16px;
   padding-left: 12px;
   border-left: 2px solid var(--dsw-alias-border-l3);
 }
