@@ -23,8 +23,8 @@ import {
   type CompositionForm, type MetadataForm, type ModelSelectionFields, type RowFields,
 } from './preset-forms.ts'
 import {
-  KNOWN_PACKAGES, MODULE_ORDER, classifyConfig, moduleOf, shortPackageId,
-  type ConfigField, type RowModule,
+  GATE_NOT_WINDOWS, GATE_WINDOWS, KNOWN_PACKAGES, MODULE_ORDER, classifyConfig, describeJs, moduleOf,
+  shortPackageId, type ConfigField, type RowModule,
 } from './preset-config-schema.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetSection.module.css'
@@ -425,13 +425,9 @@ function GateCell({ row, readOnly, t, onChange }: {
   onChange: (next: RowFields) => void
 }): ReactNode {
   if (typeof row.disabled === 'object') {
-    return (
-      <span
-        className={css.gateChip}
-        title={`${t('jsExpressionGate')} ${row.disabled.js}`}
-        aria-label={`${t('jsExpressionGate')}${row.id === '' ? '' : `: ${row.id}`}`}
-      >!!js</span>
-    )
+    // The expression line in the tile body carries the `!!js` marker; the
+    // header stays just the switch.
+    return <span aria-hidden="true" />
   }
   return (
     <input
@@ -563,6 +559,22 @@ function PackageSelect({ row, readOnly, t, packageListId, onChange }: {
 /** One key-map value as the control its own runtime type reads as — the
    generic editor behind isolate maps and the advanced fold, where no
    package schema speaks for the key. */
+/** A `!!js` value phrased in plain language; the raw source rides the tooltip. */
+function JsChip({ expr, t }: {
+  expr: string
+  t: (key: AgentPresetSettingsKey) => string
+}): ReactNode {
+  const kind = describeJs(expr)
+  const label = kind.kind === 'platform-windows'
+    ? t('gatePlatformWindows')
+    : kind.kind === 'platform-not-windows'
+      ? t('gatePlatformNotWindows')
+      : kind.kind === 'workspace-cwd'
+        ? t('jsWorkspaceCwd')
+        : t('jsCustomExpression')
+  return <span className={css.jsChip} title={expr}>{label}</span>
+}
+
 function KeyValueCell({ name, value, readOnly, t, onChange }: {
   /** The key this value sits under; the control's accessible name. */
   name: string
@@ -610,19 +622,7 @@ function KeyValueCell({ name, value, readOnly, t, onChange }: {
     )
   }
   if (isJsExprNode(value)) {
-    return (
-      <span className={css.gateLine}>
-        <code className={css.jsBadge} aria-hidden="true">!!js</code>
-        <input
-          className={`${css.cellInput} ${css.inputMono}`}
-          value={value.__jsExpr}
-          readOnly={readOnly}
-          spellCheck={false}
-          aria-label={name}
-          onChange={(event) => { onChange({ __jsExpr: event.target.value }) }}
-        />
-      </span>
-    )
+    return <JsChip expr={value.__jsExpr} t={t} />
   }
   return <YamlCell name={name} value={value} readOnly={readOnly} t={t} onChange={onChange} />
 }
@@ -824,51 +824,73 @@ function RowFieldsInput({ row, index, total, readOnly, t, onChange, onRemove, on
     onChange({ ...row, isolate })
   }
   return (
-    <div className={`${css.rowCard} ${prompts.length > 0 ? css.tileWide : ''}`}>
+    <div
+      className={`${css.rowCard} ${readOnly ? css.tileRead : css.tileEdit} ${prompts.length > 0 ? css.tileWide : ''} ${row.disabled === true ? css.tileOff : ''}`}
+    >
       <div className={css.tileHead} title={row.name === '' ? undefined : `${t('rowHeadPackage')}: ${row.name}`}>
         <GateCell row={row} readOnly={readOnly} t={t} onChange={onChange} />
-        <input
-          className={`${css.cellInput} ${css.inputMono}`}
-          value={row.id}
-          readOnly={readOnly}
-          spellCheck={false}
-          placeholder={t('rowId')}
-          aria-label={`${t('rowHeadId')} ${index + 1}`}
-          onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
-        />
+        {readOnly ? (
+          <span className={css.idLabel}>{row.id === '' ? t('rowId') : row.id}</span>
+        ) : (
+          <input
+            className={`${css.cellInput} ${css.inputMono}`}
+            value={row.id}
+            spellCheck={false}
+            placeholder={t('rowId')}
+            aria-label={`${t('rowHeadId')} ${index + 1}`}
+            onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
+          />
+        )}
         <RowTools index={index} total={total} t={t} onRemove={onRemove} onMove={onMove} placeholder={readOnly} />
       </div>
       {gate || expressions.length > 0 || booleans.length > 0 || parameters.length > 0 || isolateBools.length > 0 || showAdvChip ? (
         <div className={css.tileCfg}>
           {gate ? (
             <label className={css.paramLine}>
-              <code className={css.jsBadge} aria-hidden="true">!!js</code>
-              <input
-                className={`${css.inlineInput} ${css.inputMono}`}
-                value={gate.js}
-                readOnly={readOnly}
-                spellCheck={false}
-                aria-label={t('jsExpressionGate')}
-                title={`${t('jsExpressionGate')} ${gate.js}`}
-                onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
-              />
+              <span className={css.inlineKey}>{t('gateCondition')}</span>
+              {readOnly ? (
+                <JsChip expr={gate.js} t={t} />
+              ) : (
+                <>
+                  <select
+                    className={`${css.inlineInput}`}
+                    value={describeJs(gate.js).kind === 'custom' ? 'custom' : describeJs(gate.js).kind}
+                    aria-label={t('gateCondition')}
+                    onChange={(event) => {
+                      const picked = event.target.value
+                      if (picked === 'platform-windows') onChange({ ...row, disabled: { js: GATE_WINDOWS } })
+                      else if (picked === 'platform-not-windows') onChange({ ...row, disabled: { js: GATE_NOT_WINDOWS } })
+                      else if (picked === 'always') {
+                        const cleared: RowFields = { ...row }
+                        delete cleared.disabled
+                        onChange(cleared)
+                      }
+                    }}
+                  >
+                    <option value="always">{t('gateAlways')}</option>
+                    <option value="platform-windows">{t('gatePlatformWindows')}</option>
+                    <option value="platform-not-windows">{t('gatePlatformNotWindows')}</option>
+                    <option value="custom">{t('jsCustomExpression')}…</option>
+                  </select>
+                  {describeJs(gate.js).kind === 'custom' ? (
+                    <input
+                      className={`${css.inlineInput} ${css.inputMono}`}
+                      value={gate.js}
+                      spellCheck={false}
+                      aria-label={t('gateCondition')}
+                      title={gate.js}
+                      onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
+                    />
+                  ) : null}
+                </>
+              )}
             </label>
           ) : null}
           {expressions.map(({ field, value }) => (
-            <label key={field.key} className={css.paramLine}>
+            <div key={field.key} className={css.paramLine}>
               <span className={css.inlineKey}>{field.key}</span>
-              <code className={css.jsBadge} aria-hidden="true">!!js</code>
-              <input
-                className={`${css.inlineInput} ${css.inputMono}`}
-                value={isJsExprNode(value) ? value.__jsExpr : ''}
-                readOnly={readOnly}
-                spellCheck={false}
-                aria-label={field.key}
-                onChange={(event) => {
-                  patchConfig({ ...(row.config as Record<string, unknown>), [field.key]: { __jsExpr: event.target.value } })
-                }}
-              />
-            </label>
+              <JsChip expr={isJsExprNode(value) ? value.__jsExpr : ''} t={t} />
+            </div>
           ))}
           {booleans.length > 0 || isolateBools.length > 0 ? (
             <div className={css.toggleRow}>
@@ -1003,27 +1025,20 @@ function GroupRowFieldsInput({ row, index, total, readOnly, t, onChange, onRemov
         >
           <span className={css.chev} aria-hidden="true">▸</span>
           <GateCell row={row} readOnly={readOnly} t={t} onChange={onChange} />
-          <input
-            className={`${css.cellInput} ${css.inputMono}`}
-            value={row.id}
-            readOnly={readOnly}
-            spellCheck={false}
-            placeholder={t('rowId')}
-            aria-label={`${t('rowGroup')} ${index + 1}`}
-            onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
-          />
-          <span className={css.groupCount}>{(row.children ?? []).length}</span>
-          {gate ? (
+          {readOnly ? (
+            <span className={`${css.idLabel} ${css.idStrong}`}>{row.id === '' ? t('rowGroup') : row.id}</span>
+          ) : (
             <input
-              className={`${css.inlineInput} ${css.inlineExpr} ${css.inputMono}`}
-              value={gate.js}
-              readOnly={readOnly}
+              className={`${css.cellInput} ${css.inputMono}`}
+              value={row.id}
               spellCheck={false}
-              aria-label={t('jsExpressionGate')}
-              title={`${t('jsExpressionGate')} ${gate.js}`}
-              onChange={(event) => { onChange({ ...row, disabled: { js: event.target.value } }) }}
+              placeholder={t('rowId')}
+              aria-label={`${t('rowGroup')} ${index + 1}`}
+              onChange={(event) => { onChange({ ...row, id: event.target.value }) }}
             />
-          ) : null}
+          )}
+          <span className={css.groupCount}>{(row.children ?? []).length}</span>
+          {gate ? <JsChip expr={gate.js} t={t} /> : null}
           <span className={css.toggleRow}>
             {isolateBools.map(([key, value]) => (
               <label key={key} className={css.inlineCheck}>

@@ -24,6 +24,8 @@ export type AgentPresetSettingsKey =
   | 'configKeysLabel' | 'isolateKeysLabel'
   | 'advancedLabel' | 'packageCustom' | 'packagePlaceholder' | 'packagePick'
   | 'modulePrompt' | 'moduleTools' | 'moduleRuntime'
+  | 'gateCondition' | 'gateAlways' | 'gatePlatformWindows' | 'gatePlatformNotWindows'
+  | 'jsCustomExpression' | 'jsWorkspaceCwd'
   | 'keyRemove' | 'keyAdd' | 'keyNamePlaceholder' | 'keyValuePlaceholder' | 'keyExists'
   | 'rowAdd' | 'rowAddChild' | 'rowRemove' | 'rowUp' | 'rowDown' | 'configInvalid'
   | 'rowGroup' | 'jsExpressionGate'
@@ -111,6 +113,12 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   modulePrompt: 'Prompt',
   moduleTools: 'Tools',
   moduleRuntime: 'Runtime',
+  gateCondition: 'Enabled when',
+  gateAlways: 'Always',
+  gatePlatformWindows: 'Windows only',
+  gatePlatformNotWindows: 'Not on Windows',
+  jsCustomExpression: 'Custom expression',
+  jsWorkspaceCwd: 'Follows the session workspace',
   keyRemove: 'Remove this key',
   keyAdd: '＋ config key',
   keyNamePlaceholder: 'key',
@@ -219,6 +227,12 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   modulePrompt: '提示词',
   moduleTools: '工具',
   moduleRuntime: '运行时',
+  gateCondition: '启用条件',
+  gateAlways: '始终启用',
+  gatePlatformWindows: '仅 Windows',
+  gatePlatformNotWindows: '非 Windows',
+  jsCustomExpression: '自定义表达式',
+  jsWorkspaceCwd: '跟随会话工作区',
   keyRemove: '移除该键',
   keyAdd: '＋ 配置键',
   keyNamePlaceholder: '键名',

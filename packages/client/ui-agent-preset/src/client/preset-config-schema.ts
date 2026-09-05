@@ -199,6 +199,40 @@ export function classifyConfig(name: string, config: unknown): ClassifiedConfig 
   return { fields, advanced, mapped: true }
 }
 
+/**
+ * How a `!!js` value is phrased for people. The stored file keeps the raw
+ * expression; the form only decides which plain sentence stands in for it.
+ */
+export type KnownJs =
+  | { kind: 'platform-windows' }
+  | { kind: 'platform-not-windows' }
+  | { kind: 'workspace-cwd' }
+  | { kind: 'custom' }
+
+/** The two gate expressions the bundled presets gate their shell rows with. */
+export const GATE_WINDOWS = "process.platform === 'win32'"
+export const GATE_NOT_WINDOWS = "process.platform !== 'win32'"
+/** The cwd value that follows the session workspace. */
+export const VALUE_WORKSPACE_CWD = 'process.env.DSH_CWD ?? process.cwd()'
+
+/**
+ * Recognize the `!!js` expressions worth saying in plain language.
+ * @param expr - the raw expression source.
+ * @returns the recognized kind; anything unrecognized answers `custom`,
+ * which the form shows as a neutral chip carrying the source on hover.
+ */
+export function describeJs(expr: string): KnownJs {
+  const normalized = expr.replace(/\s+/g, ' ').trim()
+  if (normalized === GATE_WINDOWS || normalized === 'process.platform === "win32"') {
+    return { kind: 'platform-windows' }
+  }
+  if (normalized === GATE_NOT_WINDOWS || normalized === 'process.platform !== "win32"') {
+    return { kind: 'platform-not-windows' }
+  }
+  if (normalized === VALUE_WORKSPACE_CWD) return { kind: 'workspace-cwd' }
+  return { kind: 'custom' }
+}
+
 /** The semantic modules the composition form groups its rows into. */
 export type RowModule = 'prompt' | 'tools' | 'runtime' | 'advanced'
 

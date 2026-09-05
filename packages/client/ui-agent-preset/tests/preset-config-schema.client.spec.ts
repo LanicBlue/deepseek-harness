@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  KNOWN_PACKAGES, MODULE_ORDER, classifyConfig, moduleOf, packageSchema, shortPackageId,
+  GATE_NOT_WINDOWS, GATE_WINDOWS, VALUE_WORKSPACE_CWD, KNOWN_PACKAGES, MODULE_ORDER, classifyConfig,
+  describeJs, moduleOf, packageSchema, shortPackageId,
 } from '../src/client/preset-config-schema.ts'
 
 describe('package config schemas', () => {
@@ -77,5 +78,18 @@ describe('module classification', () => {
 
   it('exposes exactly the four modules in display order', () => {
     expect(MODULE_ORDER).toEqual(['prompt', 'tools', 'runtime', 'advanced'])
+  })
+})
+
+describe('js expression phrasing', () => {
+  it('recognizes the platform gates and the workspace cwd value', () => {
+    expect(describeJs(GATE_WINDOWS)).toEqual({ kind: 'platform-windows' })
+    expect(describeJs(GATE_NOT_WINDOWS)).toEqual({ kind: 'platform-not-windows' })
+    expect(describeJs(VALUE_WORKSPACE_CWD)).toEqual({ kind: 'workspace-cwd' })
+  })
+
+  it('normalizes whitespace and double quotes, and answers custom otherwise', () => {
+    expect(describeJs('process.platform   ===  "win32"')).toEqual({ kind: 'platform-windows' })
+    expect(describeJs('process.env.HOME')).toEqual({ kind: 'custom' })
   })
 })

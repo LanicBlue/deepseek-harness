@@ -620,6 +620,36 @@
   margin-left: auto;
 }
 
+/* Read mode de-forms the tile: the identifier reads as a name, controls as
+   values — borders appear only to edit. */
+.tileRead .inlineInput,
+.tileRead .cellInput {
+  border-color: transparent;
+  background: transparent;
+  padding-left: 0;
+}
+
+.idLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.idStrong {
+  flex: 0 1 auto;
+  font-size: 14px;
+}
+
+/* A tool switched off reads dimmed. */
+.tileOff {
+  opacity: 0.55;
+}
+
 /* The tile's config body: whatever the parameters call for. */
 .tileCfg {
   display: grid;
@@ -633,10 +663,19 @@
   min-width: 0;
 }
 
+.paramLine > .inlineKey {
+  flex: 0 0 96px;
+}
+
 .paramLine .inlineInput {
   flex: 1;
   width: auto;
   min-width: 0;
+}
+
+/* Expression lines read as code, not as a form field. */
+.paramLine .inlineInput + .inlineInput {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
 .chev {
@@ -728,13 +767,22 @@
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .inlineCheck input {
   margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+.inlineCheck:has(input:checked) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.inlineCheck:has(input:disabled) {
+  cursor: default;
 }
 
 .inlineField {
@@ -781,6 +829,9 @@
 /* The advanced toggle on the line: opens the key table below. */
 .advChip {
   appearance: none;
+  justify-self: start;
+  align-self: start;
+  width: fit-content;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 6px;
   padding: 2px 7px;
@@ -834,6 +885,19 @@
 }
 
 /* Child count on a folded group line. */
+/* A `!!js` value phrased in plain language; raw source on hover. */
+.jsChip {
+  align-self: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: default;
+}
+
 .groupCount {
   padding: 1px 7px;
   border-radius: 999px;
@@ -950,29 +1014,6 @@
 
 .rowSnippet .editorText {
   min-height: 40px;
-}
-
-.gateLine {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.gateLine .cellInput {
-  flex: 1;
-  min-width: 0;
-}
-
-.jsBadge {
-  flex: none;
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: var(--dsw-alias-bg-layer-2);
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
 }
 
 /* Group rows: the card becomes the group container; the fold header is the
